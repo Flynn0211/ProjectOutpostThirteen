@@ -10,7 +10,7 @@ module contracts::expedition {
     use contracts::utils;
     use contracts::npc::{Self, NPC};
     use contracts::bunker::{Self, Bunker};
-    use contracts::item;
+
 
     // ==================== ERROR CODES ====================
     const E_NPC_NOT_READY: u64 = 400;
@@ -229,26 +229,10 @@ module contracts::expedition {
         bunker: &mut Bunker,
         clock: &Clock,
     ) {
-        // Không có cách nào cứu được - NPC sẽ bị destroy
-        // Event sẽ được emit trong destroy_npc
+        // Không còn destroy NPC, mà đánh ngất (Knock Out)
+        // NPC sẽ có HP = 0 và cần Revival Potion để hồi sinh
         
-        // NOTE: Trong thực tế, function này sẽ consume NPC object
-        // Vì Sui Move không cho phép consume object trong &mut reference,
-        // Ta sẽ set HP = 0 và emit death event
-        // Frontend/game logic sẽ phải handle việc destroy NPC sau đó
-        
-        let max_hp = npc::get_max_hp(npc);  // Get max_hp first
-        npc::take_damage(npc, max_hp); // Then set HP to 0
-        
-        // Emit death event
-        utils::emit_death_event(
-            npc::get_id(npc),
-            npc::get_owner(npc),
-            npc::get_rarity(npc),
-            npc::get_level(npc),
-            b"expedition_critical_failure",
-            clock
-        );
+        npc::knock_out(npc, b"expedition_critical_failure", clock);
         
         // Emit expedition result
         utils::emit_expedition_result_event(
@@ -257,10 +241,12 @@ module contracts::expedition {
             false,
             0,
             0,
-            9999, // Max damage indicator
+            9999, // Max damage indicator for knockout
             clock
         );
     }
+        
+
 
     // ==================== CALCULATION HELPERS ====================
     

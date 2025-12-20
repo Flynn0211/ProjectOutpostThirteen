@@ -1,216 +1,121 @@
-# 🛡️ ON-CHAIN BUNKER
-*A Post-Apocalyptic Shelter Management Game on Sui*  
-**Submission for Build on Sui Hackathon**
----
-## 📌 Giới thiệu
-**On-Chain Bunker** là một game quản lý hầm trú ẩn 2D, lấy cảm hứng từ *Fallout Shelter*, được xây dựng trên **Sui Blockchain**.
+# 🛡️ ON-CHAIN BUNKER - Technical Documentation
 
-Trong một thế giới hậu tận thế, người chơi sẽ:
-* Sở hữu một **hầm trú ẩn (Bunker)** on-chain
-* Quản lý các **NPC sinh tồn duy nhất**
-* Gửi NPC đi **thám hiểm hoang địa**
-* Thu thập tài nguyên, vật phẩm hiếm
-* Mở rộng và nâng cấp hầm trú ẩn theo thời gian
+> **Lưu ý**: Tài liệu này tập trung vào **Kiến trúc Kỹ thuật** và **Cấu trúc Source Code** của hệ thống Smart Contracts trên Sui Blockchain.
 
-Điểm khác biệt cốt lõi:  
-> **NPC, vật phẩm hiếm và tiến trình phát triển đều là object on-chain, thực sự thuộc về người chơi – với true ownership, risk thực tế và composability.**
+## 🏗️ Kiến trúc Tổng thể
 
----
-## 🎯 Mục tiêu dự án
-Dự án được xây dựng trong khuôn khổ **hackathon Build on Sui**, với các mục tiêu chính:
-1. **Chứng minh khả năng biểu diễn NPC như một object on-chain**
-2. Xây dựng một gameplay loop quản lý hoàn chỉnh với **true risk & reward**:
-   > Recruit → Equip → Expedition (có rủi ro) → Level up → Phát triển bunker
-3. Thể hiện rõ **giá trị thực tế của blockchain trong game**: ownership có hậu quả, kinh tế on-chain, composability nhờ object-centric model của Sui.
+Dự án **On-Chain Bunker** được thiết kế theo mô hình **Object-Centric** của Sui, tận dụng tối đa khả năng composability và true ownership.
 
----
-## 🧠 Ý tưởng cốt lõi
-### NPC là trung tâm
-* Mỗi NPC là duy nhất, có rarity, stats cơ bản và nghề nghiệp
-* Có thể **level up permanent** (stats tăng dần theo thời gian chơi)
-* Có **inventory riêng** (equip rare item để tăng hiệu quả)
-* Có thể bị thương hoặc **mất hẳn** nếu expedition thất bại
-* Được trao đổi tự do với người chơi khác (atomic trade)
+### Luồng dữ liệu (Data Flow)
 
-### Blockchain không chỉ để “lưu trữ”
-* Quyền sở hữu NPC & item là **minh bạch**, không thể giả mạo
-* Tận dụng tối đa **object-centric model** của Sui: dynamic fields cho inventory/level, owned objects cho ownership cá nhân, event emission cho transparency
+```mermaid
+graph TD
+    User([User / Frontend]) -->|Transaction| SuiNetwork
+    
+    subgraph "Sui Smart Contracts"
+        Recruit[Recruit NPC]
+        Expedition[Start Expedition]
+        Equip[Equip Item]
+        
+        BunkerObj[Shared Object: Global Config / Bunker State]
+        NPCObj[Owned Object: NPC]
+        ItemObj[Owned Object: Item]
+        
+        Recruit -->|Creates| NPCObj
+        Expedition -->|Mutates| NPCObj
+        Expedition -->|Mutates| BunkerObj
+        Equip -->|Attaches| ItemObj
+        Equip -->|To| NPCObj
+    end
 
----
-## 🧩 Các hệ thống chính
-### 👤 Hệ thống NPC
-* Tạo ngẫu nhiên dựa trên rarity và stats (roll hoàn toàn trong smart contract)
-* **Level up permanent**: Sau mỗi expedition thành công, NPC tăng stats on-chain (HP, stamina…)
-* **Inventory system**: NPC có thể equip rare item (sử dụng dynamic object fields của Sui để attach item trực tiếp vào NPC object)
-* Nghề nghiệp ảnh hưởng trực tiếp gameplay:
-  * Scavenger → Tăng tỷ lệ tìm resource
-  * Engineer → Tăng hiệu quả generator
-  * Medic → Giảm risk bị thương
-  * Guard → Bảo vệ bunker
-  * Trader → Bonus khi trade
-* Chiêu mộ NPC tốn 0.1 SUI, logic xử lý hoàn toàn trong smart contract
-
-### 🏠 Hệ thống Bunker & Phòng chức năng
-* Các phòng cơ bản:
-  * Living Quarters
-  * Storage
-  * Generator
-* Phòng có thể nâng cấp, liên kết phụ thuộc lẫn nhau
-
-### 🧭 Hệ thống Thám hiểm (Expedition)
-* Người chơi chọn NPC, thời gian và tài nguyên mang theo
-* **True risk & reward**:
-  * Thành công → Reward tài nguyên, rare item, NPC mới + **level up permanent cho NPC tham gia**
-  * Thất bại → NPC có thể bị thương hoặc **mất hẳn (permanent death – object bị destroy/burn)**
-  * Equip item tốt → Giảm risk, tăng reward
-* Logic roll kết quả (tỷ lệ thành công, rarity item, risk mất NPC) nằm hoàn toàn trong smart contract, sử dụng pseudo-random từ tx digest/clock/sender
-
-### 🎒 Hệ thống Vật phẩm
-* **Tài nguyên tiêu hao**: thức ăn, nước, thuốc… (off-chain cho đơn giản)
-* **Vật phẩm hiếm (object on-chain)**:
-  * Có thể equip vào NPC (attach qua dynamic fields)
-  * Trade được
-  * Dùng nâng cấp bunker hoặc mở khoá tính năng
-
----
-## 🛠️ Thiết kế On-Chain (Tận dụng Sức Mạnh Sui Move)
-### I. KẾT LUẬN TỔNG QUÁT
-* ✅ **TỶ LỆ (rarity, roll kết quả, risk expedition)** → **Smart contract**
-* ✅ **CHỈ SỐ & LEVEL UP** → **Smart contract**
-* ✅ **INVENTORY (equip item)** → **Dynamic object fields**
-* ✅ **GIÁ TRỊ NPC** → **Suy ra từ on-chain data**
-* ❌ **Frontend không quyết định bất kỳ rule nào**
-
-### II. CÁC TÍNH NĂNG ON-CHAIN MỚI
-#### 1. Permanent Level Up
-* Sau expedition thành công → Contract tự động tăng stats của NPC object (ví dụ +5 HP, +10 stamina)
-* Stats được lưu trực tiếp trong NPC object → Giá trị NPC tăng thực sự theo thời gian chơi
-
-#### 2. Equip Item (Dynamic Fields)
-* Rare item có thể được attach trực tiếp vào NPC object làm child object
-* Tận dụng **dynamic object fields** của Sui → Không cần restructure contract
-* Khi expedition: Contract đọc item được equip để tính bonus/reduce risk
-
-#### 3. True Risk – Permanent Death
-* Expedition có % fail → Contract roll và nếu fail nặng → **destroy NPC object** hoặc transfer về "graveyard" shared object
-* Player thực sự mất tài sản → Chứng minh true ownership có hậu quả
-
-### III. LOGIC NẰM Ở ĐÂU?
-🧠 **Smart contract (luật cứng)**
-* Chiêu mộ & roll rarity/stats
-* Expedition: roll kết quả, level up, equip bonus, risk death
-* Equip/unequip item
-* Trade & destroy object
-
-🎮 **Frontend (trải nghiệm)**
-* Animation recruit + rarity glow
-* Expedition timer + hiệu ứng risk
-* Hiển thị level up, equip slot
-* Cảnh báo khi có nguy cơ mất NPC
-
-### IV. TÓM TẮT
-* Tỷ lệ & risk → **Smart contract**
-* Stats & level → **Smart contract**
-* Inventory → **Dynamic fields**
-* Giá trị → **Suy ra từ dữ liệu on-chain**
-* Frontend → **Chỉ hiển thị & tạo trải nghiệm**
-
----
-## 🎉 Tại sao chọn Sui?
-* **Object-centric model**: NPC & item là owned object → true ownership, trade atomic
-* **Dynamic fields**: Attach item/inventory/level mà không cần wrapper phức tạp
-* **Pseudo-random on-chain**: Roll rarity, expedition, risk death mà không cần oracle
-* **Event emission**: Thông báo recruit, level up, expedition result → frontend realtime
-* **Low gas & fast finality**: Phù hợp tương tác thường xuyên
-
----
-## 🧱 Kiến trúc tổng thể
-```
-Frontend (Web Game)
-  ↓ gọi transaction
-Sui Blockchain (Move Smart Contract)
-  ↓ trả object & state + events
-Frontend hiển thị kết quả
+    NPCObj -->|Dynamic Fields| Inventory[Inventory]
+    SuiNetwork -->|Events| Indexer[Frontend Indexer / Event Listener]
+    Indexer -->|Updates UI| User
 ```
 
-* **Smart Contract (Move)**: Toàn bộ luật chơi, ownership, risk/reward
-* **Web Game**: UI/UX, animation, query object để render
-* **Backend (optional)**: Narrative text
+### Các thành phần chính
+
+1.  **NPC (Non-Player Character)**:
+    *   Là một **Owned Object** (thuộc sở hữu ví người dùng).
+    *   Chứa toàn bộ chỉ số: HP, Stamina, Level, Profession, Rarity.
+    *   **Level & Stats** là vĩnh viễn (permanent) và được lưu on-chain.
+    *   **Inventory**: Sử dụng **Dynamic Object Fields** để gắn (attach) các Item objects vào NPC.
+
+2.  **Item (Vật phẩm)**:
+    *   Là một **Owned Object**.
+    *   **Phân loại rõ ràng**:
+        *   **Equippable** (Vũ khí, Giáp, Tool): Tăng chỉ số khi thám hiểm.
+        *   **Consumable** (Thuốc, Thức ăn): Dùng để hồi phục hoặc cứu sống NPC.
+        *   **Collectible** (Hàng sưu tầm - Type 99): Rarity cao, **KHÔNG THỂ EQUIP** (an toàn tuyệt đối khỏi rủi ro thám hiểm), dùng để sưu tầm/trading.
+
+3.  **Bunker (Hầm trú ẩn)**:
+    *   Quản lý tài nguyên tổng của người chơi (hoặc shared state tùy implementation).
+    *   Nơi lưu trữ tài nguyên thu được từ thám hiểm.
+
+4.  **Expedition (Thám hiểm)**:
+    *   Logic cốt lõi xử lý "Game Loop".
+    *   Tính toán xác suất (Probability) và Kết quả (Outcome) dựa trên RNG on-chain (Pseudo-random).
+    *   Xử lý rủi ro: NPC bị thương hoặc **Bất tỉnh (Knocked Out)**.
 
 ---
-## 🛠️ Công nghệ sử dụng
-### Blockchain
-* Sui Testnet
-* Sui Move (dynamic fields, owned/shared objects, event emission)
-### Frontend
-* Vite + React + TypeScript
-* @mysten/dapp-kit + Sui Wallet
-### Backend (tuỳ chọn)
-* Node.js (narrative generator)
+
+## 📂 Cấu trúc Source Code
+
+Source code nằm trong thư mục `Contracts/sources/`. Dưới đây là mô tả chi tiết từng module:
+
+### 1. `utils.move` (Tiện ích & Hằng số)
+Đây là module nền tảng, chứa:
+*   **Constants**: Định nghĩa tất cả các chỉ số game, ngưỡng rarity, loại nghề nghiệp, loại item.
+    *   *Ví dụ*: `RARITY_MYTHIC`, `PROFESSION_MEDIC`, `RECRUIT_COST_MIST`.
+*   **Pseudo-Random Number Generator (PRNG)**: Hàm `generate_random_u64` và `random_in_range` dùng để roll các xác suất on-chain.
+*   **Events**: Định nghĩa cấu trúc các Events quan trọng (`RecruitEvent`, `ExpeditionResultEvent`, `LevelUpEvent`, `DeathEvent`).
+*   **Helper Functions**: Các hàm tính toán range chỉ số dựa trên rarity.
+
+### 2. `item.move` (Hệ thống Vật phẩm)
+Quản lý Object Item:
+*   **Struct `Item`**: Định nghĩa object Item với các chỉ số bonus.
+*   **`create_random_item`**: Logic tạo item ngẫu nhiên (rarity, type, stats) dựa trên PRNG.
+*   **`destroy_item`**: Hàm burn item.
+*   **Getters**: Các hàm lấy thông tin item.
+
+### 3. `npc.move` (Hệ thống Nhân vật)
+Trái tim của game, quản lý Object NPC:
+*   **Struct `NPC`**: Định nghĩa object NPC.
+*   **`recruit_npc`**: Logic mint NPC mới. Tốn phí SUI, random stats/nghề nghiệp.
+*   **`equip_item` / `unequip_item`**: Logic sử dụng Dynamic Object Fields để gắn/gỡ Item vào NPC. Tự động cộng/trừ chỉ số bonus.
+*   **`level_up`**: Hàm tăng stats cơ bản cho NPC.
+*   **`take_damage`**: Hàm trừ HP.
+*   **`knock_out`**: Hàm xử lý khi NPC hết máu (HP = 0).
+*   **`revive_npc`**: Hồi sinh NPC bằng Revival Potion.
+
+### 4. `expedition.move` (Logic Game Loop)
+Xử lý logic thám hiểm:
+*   **`start_expedition`**: Entry point chính.
+    *   Kiểm tra điều kiện (Stamina, ready state).
+    *   Trừ cost.
+    *   Roll kết quả (Critical Success, Success, Failure, Critical Failure).
+*   **Logic tính toán**:
+    *   `calculate_success_rate`: Tính % thành công dựa trên Stats NPC + Item Bonus + Profession Bonus.
+    *   `handle_...`: Các hàm xử lý từng kết quả cụ thể (trao thưởng, trừ máu, hoặc giết NPC).
+
+### 5. `bunker.move` (Quản lý Hầm)
+*   Quản lý tài nguyên và nâng cấp hầm trú ẩn. (Hiện tại là module bổ trợ).
 
 ---
-## 📁 Cấu trúc thư mục
-### Smart Contract
-```
-contracts/
-├─ Move.toml
-└─ sources/
-   ├─ bunker.move
-   ├─ npc.move
-   ├─ expedition.move
-   ├─ item.move
-   └─ utils.move
-```
 
-### Web Game
-```
-webgame/
-├─ src/
-│ ├─ pages/
-│ ├─ components/
-│ ├─ services/
-│ ├─ hooks/
-│ ├─ config/
-│ └─ types/
-```
+## 🔧 Hướng dẫn nhanh cho Dev
 
----
-## 🚀 Cách chạy dự án
-### 1. Deploy contract
+### Quy trình phát triển (Workflow)
+1.  **Chỉnh sửa Constants**: Muốn cân bằng game (balance), hãy sửa trong `utils.move`.
+2.  **Thêm Logic Game**: Sửa `expedition.move` để thay đổi luật chơi.
+3.  **Thêm Thuộc tính NPC**: Sửa struct `NPC` trong `npc.move` (lưu ý versioning nếu mainnet).
+
+### Cách tích hợp Frontend
+Xem chi tiết tại file: [FRONTEND_GUIDE.md](./FRONTEND_GUIDE.md) (Sắp cập nhật)
+
+### Deploy
 ```bash
-cd contracts
+cd Contracts
 sui move build
 sui client publish --gas-budget 100000000
 ```
-Lưu **Package ID**.
-
-### 2. Chạy web
-```bash
-cd webgame
-npm install
-npm run dev
-```
-Cập nhật Package ID trong `src/config/sui.ts`
-
----
-## ⚠️ Giới hạn hiện tại (Hackathon Scope)
-* Prototype tập trung core on-chain loop
-* Không có PvP/multiplayer realtime
-* Narrative off-chain
-* Balance chưa tối ưu dài hạn
-* Đơn giản hóa UI để fit thời gian hackathon
-
----
-## 🚀 Tầm nhìn tương lai
-* Marketplace on-chain (Kiosk integration)
-* Shared bunker & co-op expedition
-* Global expedition log từ events
-* Sponsored transaction để giảm barrier
-
----
-## 👥 Team
-* **Tech Lead / System Designer** – Kiến trúc & Move core
-* **Move Developer** – Module & on-chain logic
-* **Frontend Developer** – UI/UX & animation
-
-Chúc dự án của bạn "đã tay" với BGK và đạt kết quả cao trong hackathon! Nếu cần chỉnh thêm gì cứ bảo nhé. 🚀

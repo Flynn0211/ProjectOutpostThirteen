@@ -22,11 +22,13 @@ module contracts::npc {
     const E_INSUFFICIENT_PAYMENT: u64 = 200;
     const E_INVALID_STATS: u64 = 201;
     const E_NPC_DEAD: u64 = 202;
-    const E_INSUFFICIENT_HP: u64 = 203;
+    const E_INSUFFICIENT_HP: u64 = 203; // Note: Also used when NPC is dead
     const E_INSUFFICIENT_STAMINA: u64 = 204;
     const E_ALREADY_EQUIPPED: u64 = 205;
     const E_NO_ITEM_EQUIPPED: u64 = 206;
     const E_NOT_OWNER: u64 = 207;
+    const E_INVALID_ITEM: u64 = 208;
+    const E_CANNOT_EQUIP_THIS_ITEM: u64 = 209;
 
     // ==================== CONSTANTS ====================
     const LEVEL_UP_HP_BONUS: u64 = 5;        // Mỗi level tăng 5 HP
@@ -226,6 +228,8 @@ module contracts::npc {
      * - Item không mất đi, chỉ attach vào NPC
      * - Có thể unequip và equip item khác
      * - Bonuses tự động áp dụng trong expedition
+     * - **QUAN TRỌNG**: Chỉ cho phép EQUIP: Weapon (Type 1), Armor (Type 2), Tool (Type 3).
+     * - **KHÔNG ĐƯỢC EQUIP**: Medicine (Type 4), Revival Potion (Type 5), Food (Type 6), Collectible (Type 99).
      * 
      * CÁCH DÙNG:
      * ```
@@ -242,6 +246,16 @@ module contracts::npc {
     ) {
         // Kiểm tra chưa có item equipped
         assert!(!dynamic_object_field::exists_(&npc.id, b"equipped_item"), E_ALREADY_EQUIPPED);
+        
+        // Kiểm tra item type hợp lệ để equip (Weapon, Armor, Tool)
+        // Không cho equip Medicine, Revival Potion, Food, Collectible
+        let item_type = item::get_item_type(&item);
+        assert!(
+            item_type != item::type_collectible() && 
+            item_type != item::type_food() &&
+            item_type != item::type_revival_potion(), // Revival potion dùng hàm revive
+            E_CANNOT_EQUIP_THIS_ITEM
+        );
         
         let item_id = object::id(&item);
         
@@ -403,32 +417,73 @@ module contracts::npc {
 
     // ==================== DESTROY (Permanent Death) ====================
     
-    /// Hủy NPC vĩnh viễn - được gọi khi expedition critical failure
-    public fun destroy_npc(npc: NPC, cause: vector<u8>, clock: &Clock) {
-        let NPC { 
-            id, 
-            rarity, 
-            level, 
-            owner,
-            profession: _,
-            max_hp: _, 
-            current_hp: _, 
-            max_stamina: _, 
-            current_stamina: _,
-            hunger: _,
-            thirst: _,
-            skills: _,
-            name: _,
-        } = npc;
+    // ==================== KNOCKOUT & REVIVAL ====================
+    
+    /// Đánh ngất NPC (thay vì chết vĩnh viễn)
+    /// Được gọi khi expedition critical failure
+    public fun knock_out(npc: &mut NPC, cause: vector<u8>, clock: &Clock) {
+        // Set HP về 0 để đánh dấu là bất tỉnh
+        npc.current_hp = 0;
         
-        let npc_id = object::uid_to_address(&id);
+        let npc_id = object::uid_to_address(&npc.id);
         
-        // Emit death event trước khi destroy
-        utils::emit_death_event(npc_id, owner, rarity, level, cause, clock);
-        
-        // Delete object
-        object::delete(id);
+        // Emit death event (frontend sẽ hiểu là Knocked Out)
+        utils::emit_death_event(npc_id, npc.owner, npc.rarity, npc.level, cause, clock);
     }
+
+    /// Hồi sinh NPC bằng Revival Potion
+    public entry fun revive_npc(
+        npc: &mut NPC,
+        potion: Item,
+        _clock: &Clock,
+        _ctx: &mut TxContext
+    ) {
+        // Kiểm tra đúng là Revival Potion (Type 5)
+        assert!(item::get_item_type(&potion) == item::type_revival_potion(), E_INVALID_ITEM);
+        
+        // Burn potion
+        item::destroy_item(potion);
+        
+        // Kiểm tra NPC có thực sự chết/ngất không? (HP == 0)
+        // Nếu còn sống vẫn cho dùng để hồi full HP? -> Logic game design.
+        // Ở đây ta cho phép dùng bất cứ lúc nào để hồi phục, nhưng chủ yếu là cứu sống.
+        
+        // Hồi sinh 50% HP + 50% Stamina
+        let revive_hp = npc.max_hp / 2;
+        let revive_stamina = npc.max_stamina / 2;
+        
+        // Nếu đang 0 HP thì set HP mới
+        if (npc.current_hp == 0) {
+            npc.current_hp = revive_hp;
+        } else {
+            // Nếu còn sống thì cộng thêm
+             npc.current_hp = if (npc.current_hp + revive_hp > npc.max_hp) { npc.max_hp } else { npc.current_hp + revive_hp };
+        };
+        
+        npc.current_stamina = if (npc.current_stamina + revive_stamina > npc.max_stamina) { npc.max_stamina } else { npc.current_stamina + revive_stamina };
+        
+        // Emit event? Có thể dùng Heal event hoặc tạo ReviveEvent riêng. 
+        // Hiện tại dùng log đơn giản hoặc reuse mechanics.
+    }
+
+    /// Ăn Food để hồi phục (HP, Stamina, Hunger)
+    public entry fun consume_food(
+        npc: &mut NPC,
+        food: Item,
+        _clock: &Clock // unused for now but good for future events
+    ) {
+        // Kiểm tra đúng là Food (Type 6)
+        assert!(item::get_item_type(&food) == item::type_food(), E_INVALID_ITEM);
+        
+        // Burn item
+        item::destroy_item(food);
+        
+        // Logic hồi phục basic
+        heal_npc(npc, 20);
+        restore_stamina(npc, 20);
+        feed_npc(npc, 50);
+    }
+
 
     // ==================== GETTERS ====================
     

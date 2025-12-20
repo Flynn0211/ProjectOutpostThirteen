@@ -14,6 +14,9 @@ module contracts::item {
     const TYPE_ARMOR: u8 = 2;
     const TYPE_TOOL: u8 = 3;
     const TYPE_MEDICINE: u8 = 4;
+    const TYPE_REVIVAL_POTION: u8 = 5;
+    const TYPE_FOOD: u8 = 6;
+    const TYPE_COLLECTIBLE: u8 = 99;
     
     // Rarity levels
     const RARITY_COMMON: u8 = 1;
@@ -28,7 +31,7 @@ module contracts::item {
         id: UID,
         name: String,
         rarity: u8,           // 1-4 (Common to Legendary)
-        item_type: u8,        // 1-4 (Weapon, Armor, Tool, Medicine)
+        item_type: u8,        // 1-3 (Equip), 4-6 (Consumable), 99 (Collectible)
         hp_bonus: u64,        // Bonus HP
         attack_bonus: u64,    // Bonus Attack
         defense_bonus: u64,   // Bonus Defense
@@ -65,7 +68,19 @@ module contracts::item {
                      else { RARITY_LEGENDARY };
         
         // Roll item type
-        let item_type = (utils::random_in_range(1, 5, clock, ctx) as u8);
+        // Roll item type
+        // 1-3: Equipable (Weapon/Armor/Tool) - 50%
+        // 4-6: Consumable (Medicine/Revival Potion/Food) - 40%
+        // 99: Collectible - 10%
+        
+        let type_roll = utils::random_in_range(1, 100, clock, ctx);
+        let item_type = if (type_roll <= 50) {
+            (utils::random_in_range(1, 3, clock, ctx) as u8)
+        } else if (type_roll <= 90) {
+            (utils::random_in_range(4, 6, clock, ctx) as u8)
+        } else {
+            TYPE_COLLECTIBLE
+        };
         
         // Calculate stats dựa trên rarity
         let (hp, atk, def, luck) = calculate_item_stats(rarity, item_type, clock, ctx);
@@ -98,7 +113,7 @@ module contracts::item {
         transfer::public_transfer(item, sender);
     }
     
-    /// Destroy item (khi cần clean up)
+    /// Destroy item (khi cần clean up hoặc dùng item)
     public entry fun destroy_item(item: Item) {
         let Item { id, name, rarity: _, item_type: _, hp_bonus: _, attack_bonus: _, defense_bonus: _, luck_bonus: _ } = item;
         
@@ -143,6 +158,18 @@ module contracts::item {
     public fun get_name(item: &Item): String {
         item.name
     }
+
+    public fun type_revival_potion(): u8 {
+        TYPE_REVIVAL_POTION
+    }
+
+    public fun type_food(): u8 {
+        TYPE_FOOD
+    }
+
+    public fun type_collectible(): u8 {
+        TYPE_COLLECTIBLE
+    }
     
     // ============ Internal Helpers ============
     
@@ -166,11 +193,15 @@ module contracts::item {
             (base, 0, base * 2, 0)
         } else if (item_type == TYPE_TOOL) {
             (0, base / 2, base / 2, base * 2)
-        } else { // Medicine
+        } else if (item_type == TYPE_MEDICINE) {
             (base * 3, 0, 0, 0)
+        } else if (item_type == TYPE_FOOD) {
+            (base, 0, 0, 0) // Food gives small HP bonus if equipped (or useless)
+        } else { // TYPE_REVIVAL_POTION, TYPE_COLLECTIBLE
+            (0, 0, 0, 0) // No passive stats
         };
         
-        // Add random variance +/- 20%
+        // Add random variance +/- 20% ONLY if stat > 0
         let variance = (base * 20 / 100);
         let hp_final = if (hp > 0) { hp + utils::random_in_range(0, variance, clock, ctx) } else { 0 };
         let atk_final = if (atk > 0) { atk + utils::random_in_range(0, variance, clock, ctx) } else { 0 };
@@ -189,7 +220,10 @@ module contracts::item {
         let type_name = if (item_type == TYPE_WEAPON) { string::utf8(b" Weapon") }
                        else if (item_type == TYPE_ARMOR) { string::utf8(b" Armor") }
                        else if (item_type == TYPE_TOOL) { string::utf8(b" Tool") }
-                       else { string::utf8(b" Medicine") };
+                       else if (item_type == TYPE_MEDICINE) { string::utf8(b" Medicine") }
+                       else if (item_type == TYPE_REVIVAL_POTION) { string::utf8(b" Revival Potion") }
+                       else if (item_type == TYPE_FOOD) { string::utf8(b" Food") }
+                       else { string::utf8(b" Artifact") }; // Collectible
         
         string::append(&mut rarity_name, type_name);
         rarity_name

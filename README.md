@@ -253,7 +253,3 @@ sui client publish --gas-budget 100000000
 | **Tool Item Chance**       | luck ÷ 3       | 21 luck = +7% loot   |
 | **Natural Recovery**       | 1 hour wait    | 60% HP/Stamina       |
 | **Instant Recovery**       | 100 resources  | 80% HP/Stamina       |
-
----
-
-_Tài liệu được cập nhật bởi Antigravity Agent - v2.0.1 (2025-12-21) - Production Ready_

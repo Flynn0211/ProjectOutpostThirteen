@@ -1,6 +1,6 @@
 // Module: expedition
 // Mô tả: Hệ thống thám hiểm với TRUE RISK & REWARD
-// NPCs có thể thành công (level up, rewards) hoặc CHẾT VĨNH VIỄN
+// NPCs có thể thành công (level up, rewards) hoặc BỊ KNOCKED OUT
 
 #[allow(unused_const, unused_variable)]
 module contracts::expedition {
@@ -14,7 +14,7 @@ module contracts::expedition {
 
     // ==================== ERROR CODES ====================
     const E_NPC_NOT_READY: u64 = 400;
-    const E_INSUFFICIENT_STATS: u64 = 401;
+
     const E_INVALID_DURATION: u64 = 402;
 
     // ==================== CONSTANTS ====================
@@ -24,7 +24,7 @@ module contracts::expedition {
     const SUCCESS_THRESHOLD: u64 = 45;            // 45-94 = Success (50%)
     const PARTIAL_SUCCESS_THRESHOLD: u64 = 25;    // 25-44 = Partial Success (20%)
     const FAILURE_THRESHOLD: u64 = 5;             // 5-24 = Failure (20%)
-    // 0-4 = Critical Failure (5%) -> PERMANENT DEATH
+    // 0-4 = Critical Failure (5%) -> NPC KNOCKED OUT
 
     // Rewards và risks
     const CRITICAL_SUCCESS_RESOURCES: u64 = 200;
@@ -52,11 +52,15 @@ module contracts::expedition {
         clock: &Clock,
         ctx: &mut TxContext
     ) {
+        let sender = tx_context::sender(ctx);
+        
+        // CRITICAL: Kiểm tra ownership - NPC và Bunker phải cùng owner và là sender
+        assert!(npc::get_owner(npc) == sender, E_NPC_NOT_READY);
+        assert!(bunker::get_owner(bunker) == sender, E_NPC_NOT_READY);
+        
         // Kiểm tra NPC sẵn sàng
         assert!(npc::is_ready_for_expedition(npc), E_NPC_NOT_READY);
         assert!(duration > 0 && duration <= 24, E_INVALID_DURATION); // Max 24 hours
-        
-        let sender = tx_context::sender(ctx);
         
         // Emit start event
         utils::emit_expedition_start_event(
@@ -79,7 +83,7 @@ module contracts::expedition {
         
         // Xử lý kết quả dựa trên roll
         if (roll < 5) {
-            // CRITICAL FAILURE - PERMANENT DEATH
+            // CRITICAL FAILURE - NPC KNOCKED OUT
             handle_critical_failure(npc, bunker, clock);
         } else if (roll < FAILURE_THRESHOLD + 20) {
             // Failure
@@ -223,14 +227,15 @@ module contracts::expedition {
         );
     }
 
-    /// Critical Failure - PERMANENT DEATH - NPC BỊ HỦY VĨNH VIỄN
+    /// Critical Failure - NPC BỊ KNOCKED OUT (BẤT TỈNH)
+    /// NPC sẽ có HP = 0 và cần Revival Potion hoặc chờ recovery time
     fun handle_critical_failure(
         npc: &mut NPC,
         bunker: &mut Bunker,
         clock: &Clock,
     ) {
         // Không còn destroy NPC, mà đánh ngất (Knock Out)
-        // NPC sẽ có HP = 0 và cần Revival Potion để hồi sinh
+        // NPC sẽ có HP = 0 và có thể recovery bằng: Revival Potion, tự hồi sau 1h, hoặc instant recovery
         
         npc::knock_out(npc, b"expedition_critical_failure", clock);
         
@@ -279,18 +284,30 @@ module contracts::expedition {
             success_rate = success_rate + 5;
         };
         
-        // Bonus từ equipped item
+        // Bonuses từ equipped items - TÁCH RIÊNG THEO TYPE
         let (bonus_hp, bonus_atk, bonus_def, bonus_luck) = npc::get_equipped_bonus(npc);
-        let equipment_bonus = (bonus_hp + bonus_atk + bonus_def + bonus_luck) / 10;
-        success_rate = success_rate + equipment_bonus;
+        
+        // WEAPON (attack bonus) → tăng success rate trực tiếp
+        let weapon_bonus = bonus_atk / 5; // Mỗi 5 attack = +1% success
+        success_rate = success_rate + weapon_bonus;
+        
+        // ARMOR/HP (defense/hp bonus) → giảm knock chance (được xử lý ở calculate_damage)
+        // Không ảnh hưởng trực tiếp đến success rate
+        
+        // TOOLS (luck bonus) → tăng item chance
+        // Được xử lý riêng ở item_chance calculation
         
         // Cap success rate
         if (success_rate > 90) {
             success_rate = 90; // Max 90%
         };
         
-        // Item chance (base 30%)
+        // Item chance calculation
+        // Base: level-based + luck bonus từ tools/equipment
         let mut item_chance = 30 + (npc::get_level(npc) * 2);
+        let luck_bonus = bonus_luck / 3; // Mỗi 3 luck = +1% item chance
+        item_chance = item_chance + luck_bonus;
+        
         if (item_chance > 70) {
             item_chance = 70;
         };
@@ -298,7 +315,7 @@ module contracts::expedition {
         (success_rate, item_chance)
     }
 
-    /// Tính damage, có reduction từ Medic và equipped armor
+    /// Tính damage với reduction từ Medic và ARMOR BONUS
     fun calculate_damage(npc: &NPC, base_damage: u64): u64 {
         let mut damage = base_damage;
         
@@ -311,13 +328,15 @@ module contracts::expedition {
             };
         };
         
-        // Reduction từ equipped armor
+        // ARMOR REDUCTION: Defense + HP bonuses giảm damage
+        // Đây là phần quan trọng nhất để armor có ý nghĩa
         let (bonus_hp, _, bonus_def, _) = npc::get_equipped_bonus(npc);
-        let armor_reduction = (bonus_hp + bonus_def) / 5;
+        let armor_reduction = (bonus_hp + bonus_def) / 5; // Mỗi 5 def/hp = -1 damage
+        
         if (damage > armor_reduction) {
             damage = damage - armor_reduction;
         } else {
-            damage = 0;
+            damage = 0; // Armor hoàn toàn chặn damage
         };
         
         damage

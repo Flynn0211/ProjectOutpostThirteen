@@ -35,10 +35,12 @@ module contracts::utils {
     const PROFESSION_TRADER: u8 = 4;     // Thương nhân (+trading bonus)
 
     // ==================== CONSTANTS - LOẠI VẬT PHẨM ====================
-    const ITEM_TYPE_WEAPON: u8 = 0;      // Vũ khí (+combat skill)
-    const ITEM_TYPE_ARMOR: u8 = 1;       // Giáp (+HP)
-    const ITEM_TYPE_TOOL: u8 = 2;        // Công cụ (+expedition success)
-    const ITEM_TYPE_MEDICINE: u8 = 3;    // Thuốc (+healing)
+    // NOTE: Item type constants được định nghĩa trong item.move module
+    // để tránh inconsistency. Sử dụng:
+    // - item::type_weapon() cho TYPE_WEAPON (1)
+    // - item::type_armor() cho TYPE_ARMOR (2) 
+    // - item::type_tool() cho TYPE_TOOL (3)
+    // - Etc.
 
     // ==================== CONSTANTS - LOẠI PHÒNG ====================
     const ROOM_TYPE_LIVING_QUARTERS: u8 = 0;  // Phòng ở
@@ -135,13 +137,14 @@ module contracts::utils {
         timestamp: u64,
     }
 
-    /// Event khi NPC chết vĩnh viễn
-    public struct DeathEvent has copy, drop {
+    /// Event khi NPC bị knocked out (bất tỉnh)
+    /// Note: Không còn permanent death, NPC có thể recover sau khi knocked
+    public struct KnockoutEvent has copy, drop {
         npc_id: address,
         owner: address,
         rarity: u8,
         level: u64,
-        cause: vector<u8>, // "expedition_failure", "starvation", etc.
+        cause: vector<u8>, // "expedition_critical_failure", "combat_damage", etc.
         timestamp: u64,
     }
 
@@ -429,7 +432,7 @@ module contracts::utils {
         });
     }
 
-    public fun emit_death_event(
+    public fun emit_knockout_event(
         npc_id: address,
         owner: address,
         rarity: u8,
@@ -437,7 +440,7 @@ module contracts::utils {
         cause: vector<u8>,
         clock: &Clock,
     ) {
-        event::emit(DeathEvent {
+        event::emit(KnockoutEvent {
             npc_id,
             owner,
             rarity,
@@ -492,23 +495,8 @@ module contracts::utils {
     public fun profession_guard(): u8 { PROFESSION_GUARD }
     public fun profession_trader(): u8 { PROFESSION_TRADER }
     
-    public fun item_type_weapon(): u8 { ITEM_TYPE_WEAPON }
-    public fun item_type_armor(): u8 { ITEM_TYPE_ARMOR }
-    public fun item_type_tool(): u8 { ITEM_TYPE_TOOL }
-    public fun item_type_medicine(): u8 { ITEM_TYPE_MEDICINE }
+    // Item type getters removed - dùng item::type_*() functions từ item.move module
     
     public fun recruit_cost(): u64 { RECRUIT_COST_MIST }
     public fun base_expedition_duration(): u64 { BASE_EXPEDITION_DURATION }
-
-    // ==================== TESTS ====================
-    
-    #[test_only]
-    public fun test_roll_rarity(clock: &Clock, ctx: &mut TxContext): u8 {
-        roll_rarity(clock, ctx)
-    }
-    
-    #[test_only]
-    public fun test_random_in_range(min: u64, max: u64, clock: &Clock, ctx: &mut TxContext): u64 {
-        random_in_range(min, max, clock, ctx)
-    }
 }

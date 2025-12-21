@@ -67,7 +67,7 @@ module contracts::item {
                      else if (roll <= 97) { RARITY_EPIC }
                      else { RARITY_LEGENDARY };
         
-        // Roll item type
+        
         // Roll item type
         // 1-3: Equipable (Weapon/Armor/Tool) - 50%
         // 4-6: Consumable (Medicine/Revival Potion/Food) - 40%
@@ -161,6 +161,10 @@ module contracts::item {
 
     public fun type_revival_potion(): u8 {
         TYPE_REVIVAL_POTION
+    }
+
+    public fun type_medicine(): u8 {
+        TYPE_MEDICINE
     }
 
     public fun type_food(): u8 {

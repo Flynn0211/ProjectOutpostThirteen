@@ -62,6 +62,12 @@ module contracts::expedition {
         assert!(npc::is_ready_for_expedition(npc), E_NPC_NOT_READY);
         assert!(duration > 0 && duration <= 24, E_INVALID_DURATION); // Max 24 hours
         
+        // ✅ Phase 1: Check hunger/thirst sufficient
+        let hunger = npc::get_hunger(npc);
+        let thirst = npc::get_thirst(npc);
+        assert!(hunger >= 20, E_NPC_NOT_READY); // Need at least 20 hunger
+        assert!(thirst >= 20, E_NPC_NOT_READY); // Need at least 20 thirst
+        
         // Emit start event
         utils::emit_expedition_start_event(
             npc::get_id(npc),
@@ -70,10 +76,13 @@ module contracts::expedition {
             clock
         );
         
-        // Giảm stamina và needs trước khi đi
+        // ✅ Phase 1: Consume hunger/thirst
+        npc::consume_hunger(npc, 20);
+        npc::consume_thirst(npc, 15);
+        
+        // Giảm stamina
         let stamina_cost = 20 + (duration * 5);
         npc::consume_stamina(npc, stamina_cost);
-        npc::decrease_needs(npc, duration * 10, duration * 15);
         
         // Tính toán kết quả expedition
         let (success_rate, item_chance) = calculate_success_rate(npc, duration);
@@ -118,6 +127,23 @@ module contracts::expedition {
         // Level up
         npc::level_up(npc, clock);
         
+        // ✅ Phase 3: Reduce durability (outcome 0 = critical success)
+        npc::reduce_equipped_durability(npc, 0);
+        
+        // ✅ Phase 3: Blueprint drop (15% chance on critical success)
+        let blueprint_roll = utils::random_in_range(0, 100, clock, ctx);
+        if (blueprint_roll < 15) {
+            let bp_rarity = utils::roll_rarity(clock, ctx);
+            let bp_type = (utils::random_in_range(1, 4, clock, ctx) as u8); // 1-3: Weapon/Armor/Tool
+            
+            let blueprint = contracts::crafting::create_blueprint(bp_type, bp_rarity, ctx);
+            let bp_id = object::id(&blueprint);
+            let sender = npc::get_owner(npc);
+            transfer::public_transfer(blueprint, sender);
+            
+            utils::emit_blueprint_dropped_event(bp_id, sender, bp_type, bp_rarity, clock);
+        };
+        
         // Có cơ hội cao nhận item
         let item_roll = utils::random_in_range(0, 100, clock, ctx);
         let items_gained = if (item_roll < item_chance + 30) { 1 } else { 0 };
@@ -128,11 +154,17 @@ module contracts::expedition {
         };
         
         // Emit result event
+        let food = resources / 2;
+        let water = resources / 4;
+        let scrap = resources / 4;
+        
         utils::emit_expedition_result_event(
             npc::get_id(npc),
             npc::get_owner(npc),
             true,
-            resources,
+            food,
+            water,
+            scrap,
             items_gained,
             CRITICAL_SUCCESS_DAMAGE,
             clock
@@ -159,16 +191,39 @@ module contracts::expedition {
         let damage = calculate_damage(npc, SUCCESS_DAMAGE);
         npc::take_damage(npc, damage);
         
+        // ✅ Phase 3: Reduce durability (outcome 1 = success)
+        npc::reduce_equipped_durability(npc, 1);
+        
+        // ✅ Phase 3: Blueprint drop (8% chance on success)
+        let blueprint_roll = utils::random_in_range(0, 100, clock, ctx);
+        if (blueprint_roll < 8) {
+            let bp_rarity = utils::roll_rarity(clock, ctx);
+            let bp_type = (utils::random_in_range(1, 4, clock, ctx) as u8);
+            
+            let blueprint = contracts::crafting::create_blueprint(bp_type, bp_rarity, ctx);
+            let bp_id = object::id(&blueprint);
+            let sender = npc::get_owner(npc);
+            transfer::public_transfer(blueprint, sender);
+            
+            utils::emit_blueprint_dropped_event(bp_id, sender, bp_type, bp_rarity, clock);
+        };
+        
         // Có cơ hội nhận item
         let item_roll = utils::random_in_range(0, 100, clock, ctx);
         let items_gained = if (item_roll < item_chance) { 1 } else { 0 };
         
         // Emit result event
+        let food = resources / 2;
+        let water = resources / 4;
+        let scrap = resources / 4;
+        
         utils::emit_expedition_result_event(
             npc::get_id(npc),
             npc::get_owner(npc),
             true,
-            resources,
+            food,
+            water,
+            scrap,
             items_gained,
             damage,
             clock
@@ -191,12 +246,35 @@ module contracts::expedition {
         let damage = calculate_damage(npc, PARTIAL_SUCCESS_DAMAGE);
         npc::take_damage(npc, damage);
         
+        // ✅ Phase 3: Reduce durability (outcome 2 = partial success)
+        npc::reduce_equipped_durability(npc, 2);
+        
+        // ✅ Phase 3: Blueprint drop (3% chance on partial success)
+        let blueprint_roll = utils::random_in_range(0, 100, clock, ctx);
+        if (blueprint_roll < 3) {
+            let bp_rarity = utils::roll_rarity(clock, ctx);
+            let bp_type = (utils::random_in_range(1, 4, clock, ctx) as u8);
+            
+            let blueprint = contracts::crafting::create_blueprint(bp_type, bp_rarity, ctx);
+            let bp_id = object::id(&blueprint);
+            let sender = npc::get_owner(npc);
+            transfer::public_transfer(blueprint, sender);
+            
+            utils::emit_blueprint_dropped_event(bp_id, sender, bp_type, bp_rarity, clock);
+        };
+        
         // Emit result event
+        let food = resources / 2;
+        let water = resources / 4;
+        let scrap = resources / 4;
+        
         utils::emit_expedition_result_event(
             npc::get_id(npc),
             npc::get_owner(npc),
             false,
-            resources,
+            food,
+            water,
+            scrap,
             0,
             damage,
             clock
@@ -215,11 +293,16 @@ module contracts::expedition {
         let damage = calculate_damage(npc, FAILURE_DAMAGE);
         npc::take_damage(npc, damage);
         
+        // ✅ Phase 3: Reduce durability (outcome 3 = failure)
+        npc::reduce_equipped_durability(npc, 3);
+        
         // Emit result event
         utils::emit_expedition_result_event(
             npc::get_id(npc),
             npc::get_owner(npc),
             false,
+            0,
+            0,
             0,
             0,
             damage,
@@ -239,11 +322,16 @@ module contracts::expedition {
         
         npc::knock_out(npc, b"expedition_critical_failure", clock);
         
+        // ✅ Phase 3: Reduce durability (outcome 4 = critical failure)
+        npc::reduce_equipped_durability(npc, 4);
+        
         // Emit expedition result
         utils::emit_expedition_result_event(
             npc::get_id(npc),
             npc::get_owner(npc),
             false,
+            0,
+            0,
             0,
             0,
             9999, // Max damage indicator for knockout

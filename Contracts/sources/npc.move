@@ -43,6 +43,30 @@ module contracts::npc {
     const STATUS_IDLE: u8 = 0;
     const STATUS_ON_MISSION: u8 = 1;
     const STATUS_KNOCKED: u8 = 2;
+    const STATUS_WORKING: u8 = 3;  // Phase 1: Working at bunker room
+    
+    // Phase 1: Survival constants
+    const HUNGER_DECAY_PASSIVE: u64 = 5;    // Per hour cuando idle
+    const THIRST_DECAY_PASSIVE: u64 = 10;
+    const HUNGER_DECAY_WORKING: u64 = 3;    // Additional when working
+    const THIRST_DECAY_WORKING: u64 = 5;
+    const EXPEDITION_HUNGER_COST: u64 = 20;
+    const EXPEDITION_THIRST_COST: u64 = 15;
+    const HUNGER_STARVATION_THRESHOLD: u64 = 10;
+    const THIRST_DEHYDRATION_THRESHOLD: u64 = 10;
+    const STARVATION_HP_LOSS: u64 = 5;  // Per hour
+    
+    // Phase 1: Initial stats
+    const INITIAL_HUNGER: u64 = 100;
+    const INITIAL_THIRST: u64 = 100;
+    
+    // Error codes for Phase 1
+    const E_NPC_NOT_READY: u64 = 216;
+    const E_NPC_HUNGRY: u64 = 217;
+    const E_NPC_THIRSTY: u64 = 218;
+    const E_NPC_NOT_WORKING: u64 = 219;
+    const E_ROOM_FULL: u64 = 220;
+    const E_INSUFFICIENT_POWER: u64 = 221;
     
     // Recovery Constants
     const RECOVERY_TIME_MS: u64 = 3600000;      // 1 giờ = 3,600,000 ms
@@ -64,12 +88,34 @@ module contracts::npc {
     const LEVEL_UP_HP_BONUS: u64 = 5;        // Mỗi level tăng 5 HP
     const LEVEL_UP_STAMINA_BONUS: u64 = 10;  // Mỗi level tăng 10 stamina
     
+    // ==================== PHASE 3: SKILL SYSTEM ====================
+    
+    // Skill IDs (10 total)
+    const SKILL_NIGHT_VISION: u8 = 0;      // +10% success rate (long expeditions only)
+    const SKILL_FAST_WORKER: u8 = 1;       // +15% production speed when working
+    const SKILL_IRON_STOMACH: u8 = 2;      // -20% hunger decay
+    const SKILL_DESERT_RAT: u8 = 3;        // -20% thirst decay
+    const SKILL_LUCKY_SCAVENGER: u8 = 4;   // +10% item drop chance in expeditions
+    const SKILL_COMBAT_VETERAN: u8 = 5;    // +5% expedition success rate
+    const SKILL_EFFICIENT_WORKER: u8 = 6;  // -10% power consumption when working
+    const SKILL_RESOURCEFUL: u8 = 7;       // +20% scrap from expeditions
+    const SKILL_TOUGH: u8 = 8;             // +20 max HP (permanent)
+    const SKILL_ENDURANCE: u8 = 9;         // +20 max stamina (permanent)
+    
+    // Respec costs
+    const RESPEC_COST_SUI: u64 = 100_000_000;  // 0.1 SUI (after first free)
+    
+    // Error codes for skills
+    const E_NO_SKILL_POINTS: u64 = 1200;
+    const SKILL_ALREADY_LEARNED: u64 = 1201;
+    const E_INVALID_SKILL: u64 = 1202;
+    const E_NO_SKILLS_TO_RESPEC: u64 = 1203;
+    
     // Note: Old single slot key b"equipped_item" sẽ được deprecated
 
     // ==================== STRUCT ====================
     
-    /// NPC object - Nhân vật sinh tồn trong bunker
-    /// Owned object, có thể trade, level up, equip items
+    /// NPC object - Nhân vật sinh tồn trong bunker (v2.0: Phase 1 updates)
     public struct NPC has key, store {
         id: UID,
         rarity: u8,           // 0-5: Common -> Mythic
@@ -82,11 +128,23 @@ module contracts::npc {
         hunger: u64,          // Độ đói (0-100, 100 = no đủ)
         thirst: u64,          // Độ khát (0-100, 100 = no đủ)
         skills: vector<u8>,   // Danh sách skill IDs
+        
+        // ✅ Phase 3: Skill system
+        skill_points: u64,    // Unspent skill points (1 per level)
+        respec_count: u64,    // Number of times respec'd
+        
         owner: address,       // Địa chỉ chủ sở hữu
         name: String,         // Tên NPC (có thể đặt sau)
-        status: u8,           // Trạng thái: IDLE/ON_MISSION/KNOCKED
+        status: u8,           // Trạng thái: IDLE/ON_MISSION/KNOCKED/WORKING
         knocked_at: u64,      // Timestamp bị knocked (0 nếu không knocked)
         inventory_count: u64, // Số lượng items trong inventory (0-20)
+        
+        // ✅ Phase 1: Working system
+        assigned_room: Option<u64>,  // Room index NPC đang làm việc (None nếu không)
+        work_started_at: u64,        // Timestamp bắt đầu làm
+        
+        // ✅ Phase 1: Strength stat
+        strength: u64,               // Sức mạnh (for workshop efficiency)
         // Dynamic field sẽ được dùng để attach equipped items và inventory items
     }
 
@@ -150,6 +208,10 @@ module contracts::npc {
         let max_hp = utils::roll_stat_for_rarity(rarity, true, clock, ctx);
         let max_stamina = utils::roll_stat_for_rarity(rarity, false, clock, ctx);
         
+        // ✅ Phase 1: Roll strength
+        let (str_min, str_max) = utils::get_strength_range_for_rarity(rarity);
+        let strength = utils::random_in_range(str_min, str_max, clock, ctx);
+        
         // 6. Tạo skills dựa trên profession và rarity
         let skills = generate_skills(profession, rarity, clock, ctx);
         
@@ -167,11 +229,16 @@ module contracts::npc {
             hunger: 100,                  // Đủ no
             thirst: 100,                  // Đủ nước
             skills,
+            skill_points: 0,              // Phase 3: Start with 0 points
+            respec_count: 0,              // Phase 3: Haven't respec'd yet
             owner: sender,
             name: string::utf8(b"Survivor"), // Tên mặc định, có thể đổi sau
             status: STATUS_IDLE,         // Bắt đầu ở trạng thái IDLE
             knocked_at: 0,                // Chưa bị knocked
             inventory_count: 0,           // Inventory trống
+            assigned_room: option::none(), // Chưa work
+            work_started_at: 0,
+            strength,
         };
         
         let npc_id = object::uid_to_address(&npc.id);
@@ -219,6 +286,9 @@ module contracts::npc {
         npc.level = npc.level + 1;
         npc.max_hp = npc.max_hp + LEVEL_UP_HP_BONUS;
         npc.max_stamina = npc.max_stamina + LEVEL_UP_STAMINA_BONUS;
+        
+        // ✅ Phase 3: Grant 1 skill point per level
+        grant_skill_point(npc);
         
         // Heal một phần khi level up
         npc.current_hp = if (npc.current_hp + LEVEL_UP_HP_BONUS > npc.max_hp) {
@@ -269,7 +339,7 @@ module contracts::npc {
         npc: &mut NPC,
         item: Item,
         clock: &Clock,
-        ctx: &mut TxContext
+        _ctx: &mut TxContext
     ) {
         // Kiểm tra NPC không được ON_MISSION hoặc KNOCKED
         assert!(npc.status == STATUS_IDLE, E_NPC_ON_MISSION);
@@ -325,9 +395,9 @@ module contracts::npc {
      * vì đã chuyển sang multi-slot system
      */
     public entry fun unequip_item(
-        npc: &mut NPC,
-        clock: &Clock,
-        ctx: &mut TxContext
+        _npc: &mut NPC,
+        _clock: &Clock,
+        _ctx: &mut TxContext
     ) {
         // Deprecated - chuyển sang dùng unequip_weapon/armor/tool functions
         abort E_NO_ITEM_EQUIPPED
@@ -346,7 +416,7 @@ module contracts::npc {
         npc: &mut NPC,
         slot_key: vector<u8>,
         clock: &Clock,
-        ctx: &mut TxContext
+        _ctx: &mut TxContext
     ) {
         // Kiểm tra có item trong slot
         assert!(dynamic_object_field::exists_(&npc.id, slot_key), E_NO_ITEM_EQUIPPED);
@@ -531,7 +601,7 @@ module contracts::npc {
     public entry fun transfer_from_inventory(
         npc: &mut NPC,
         slot_index: u64,
-        ctx: &mut TxContext
+        _ctx: &mut TxContext
     ) {
         let item = remove_item_from_inventory(npc, slot_index);
         transfer::public_transfer(item, npc.owner);
@@ -631,6 +701,166 @@ module contracts::npc {
         } else {
             npc.thirst = 0;
         };
+    }
+    
+    // ==================== PHASE 1: WORKING SYSTEM ====================
+    
+    /// Assign NPC to room for work
+    public entry fun assign_to_room(
+        npc: &mut NPC,
+        bunker: &mut bunker::Bunker,
+        room_index: u64,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let sender = tx_context::sender(ctx);
+        assert!(npc.owner == sender, E_NOT_OWNER);
+        assert!(bunker::get_owner(bunker) == sender, E_NOT_OWNER);
+        assert!(npc.status == STATUS_IDLE, E_NPC_NOT_READY);
+        assert!(!is_knocked(npc), E_NPC_NOT_READY);
+        
+        // Check power sufficient
+        assert!(bunker::is_power_sufficient(bunker), E_INSUFFICIENT_POWER);
+        
+        // Assign
+        npc.status = STATUS_WORKING;
+        npc.assigned_room = option::some(room_index);
+        npc.work_started_at = clock::timestamp_ms(clock);
+        
+        // Update room
+        bunker::increment_room_workers(bunker, room_index);
+        
+        // Emit event
+        utils::emit_work_assigned_event(
+            object::uid_to_address(&npc.id),
+            bunker::get_id(bunker),
+            room_index,
+            clock
+        );
+    }
+    
+    /// Unassign NPC from room
+    public entry fun unassign_from_room(
+        npc: &mut NPC,
+        bunker: &mut bunker::Bunker,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let sender = tx_context::sender(ctx);
+        assert!(npc.owner == sender, E_NOT_OWNER);
+        assert!(npc.status == STATUS_WORKING, E_NPC_NOT_WORKING);
+        
+        let room_index = *option::borrow(&npc.assigned_room);
+        
+        // Update survival stats based on work time
+        let current_time = clock::timestamp_ms(clock);
+        let hours_worked = (current_time - npc.work_started_at) / 3600000;
+        update_survival_stats_working(npc, hours_worked);
+        
+        // Unassign
+        npc.status = STATUS_IDLE;
+        npc.assigned_room = option::none();
+        npc.work_started_at = 0;
+        
+        // Update room
+        bunker::decrement_room_workers(bunker, room_index);
+    }
+    
+    /// Phase 1: Feed NPC using bunker resources
+    public entry fun feed_npc_from_bunker(
+        npc: &mut NPC,
+        bunker: &mut bunker::Bunker,
+        amount: u64,
+        ctx: &mut TxContext
+    ) {
+        assert!(npc.owner == tx_context::sender(ctx), E_NOT_OWNER);
+        assert!(bunker::get_owner(bunker) == tx_context::sender(ctx), E_NOT_OWNER);
+        
+        bunker::consume_food(bunker, amount);
+        npc.hunger = if (npc.hunger + amount > 100) { 100 } else { npc.hunger + amount };
+    }
+    
+    /// Phase 1: Give water using bunker resources
+    public entry fun give_water_from_bunker(
+        npc: &mut NPC,
+        bunker: &mut bunker::Bunker,
+        amount: u64,
+        ctx: &mut TxContext
+    ) {
+        assert!(npc.owner == tx_context::sender(ctx), E_NOT_OWNER);
+        assert!(bunker::get_owner(bunker) == tx_context::sender(ctx), E_NOT_OWNER);
+        
+        bunker::consume_water(bunker, amount);
+        npc.thirst = if (npc.thirst + amount > 100) { 100 } else { npc.thirst + amount };
+    }
+    
+    /// Update survival stats (passive decay) - Phase 1
+    public fun update_survival_stats(npc: &mut NPC, hours_elapsed: u64, clock: &Clock) {
+        // Hunger decay
+        let hunger_loss = HUNGER_DECAY_PASSIVE * hours_elapsed;
+        npc.hunger = if (npc.hunger > hunger_loss) {
+            npc.hunger - hunger_loss
+        } else {
+            0
+        };
+        
+        // Thirst decay
+        let thirst_loss = THIRST_DECAY_PASSIVE * hours_elapsed;
+        npc.thirst = if (npc.thirst > thirst_loss) {
+            npc.thirst - thirst_loss
+        } else {
+            0
+        };
+        
+        // Starvation damage
+        if (npc.hunger < HUNGER_STARVATION_THRESHOLD || npc.thirst < THIRST_DEHYDRATION_THRESHOLD) {
+            let hp_loss = STARVATION_HP_LOSS * hours_elapsed;
+            
+            utils::emit_npc_starving_event(
+                object::uid_to_address(&npc.id),
+                npc.hunger,
+                npc.thirst,
+                hp_loss,
+                clock
+            );
+            
+            if (npc.current_hp > hp_loss) {
+                npc.current_hp = npc.current_hp - hp_loss;
+            } else {
+                npc.current_hp = 0;
+                knock_out(npc, b"starvation", clock);
+            };
+        };
+    }
+    
+    /// Update survival stats when working
+    fun update_survival_stats_working(npc: &mut NPC, hours_worked: u64) {
+        let total_hunger_loss = (HUNGER_DECAY_PASSIVE + HUNGER_DECAY_WORKING) * hours_worked;
+        let total_thirst_loss = (THIRST_DECAY_PASSIVE + THIRST_DECAY_WORKING) * hours_worked;
+        
+        npc.hunger = if (npc.hunger > total_hunger_loss) {
+            npc.hunger - total_hunger_loss
+        } else {
+            0
+        };
+        
+        npc.thirst = if (npc.thirst > total_thirst_loss) {
+            npc.thirst - total_thirst_loss
+        } else {
+            0
+        };
+    }
+    
+    /// Consume hunger (for expedition)
+    public fun consume_hunger(npc: &mut NPC, amount: u64) {
+        assert!(npc.hunger >= amount, E_NPC_HUNGRY);
+        npc.hunger = npc.hunger - amount;
+    }
+    
+    /// Consume thirst (for expedition)
+    public fun consume_thirst(npc: &mut NPC, amount: u64) {
+        assert!(npc.thirst >= amount, E_NPC_THIRSTY);
+        npc.thirst = npc.thirst - amount;
     }
 
     /// Rename NPC
@@ -758,12 +988,8 @@ module contracts::npc {
         add_item_to_inventory(npc, item);
     }
 
-    // ==================== KNOCKDOWN RECOVERY SYSTEM ====================
-    
-    /// Internal: Set status cho NPC
-    fun set_status(npc: &mut NPC, new_status: u8) {
-        npc.status = new_status;
-    }
+
+    // ==================== HỆ THỐNG HỒI PHỤC SAU KNOCKOUT ====================
     
     /// Kiểm tra NPC có đang bị knocked không
     public fun is_knocked(npc: &NPC): bool {
@@ -810,7 +1036,7 @@ module contracts::npc {
     public entry fun instant_recover_npc(
         npc: &mut NPC,
         bunker: &mut bunker::Bunker,
-        clock: &Clock,
+        _clock: &Clock,
         ctx: &mut TxContext
     ) {
         let sender = tx_context::sender(ctx);
@@ -874,6 +1100,26 @@ module contracts::npc {
 
     public fun get_thirst(npc: &NPC): u64 {
         npc.thirst
+    }
+    
+    // Phase 1 getters
+    public fun get_strength(npc: &NPC): u64 {
+        npc.strength
+    }
+    
+    public fun get_assigned_room(npc: &NPC): Option<u64> {
+        npc.assigned_room
+    }
+    
+    public fun is_working(npc: &NPC): bool {
+        npc.status == STATUS_WORKING
+    }
+    
+    public fun can_work(npc: &NPC): bool {
+        npc.status == STATUS_IDLE && 
+        npc.hunger > 20 && 
+        npc.thirst > 20 &&
+        !is_knocked(npc)
     }
 
     public fun get_skills(npc: &NPC): vector<u8> {
@@ -995,5 +1241,162 @@ module contracts::npc {
         if (dynamic_object_field::exists_(&npc.id, b"slot_tool_2")) { count = count + 1 };
         
         count
+    }
+    
+    // ==================== PHASE 3: DURABILITY INTEGRATION ====================
+    
+    /// Reduce durability of all equipped items based on expedition outcome
+    /// Called by expedition.move after each expedition
+    public(package) fun reduce_equipped_durability(npc: &mut NPC, outcome: u8) {
+        use contracts::item;
+        
+        // Check weapon slot
+        if (dynamic_object_field::exists_(&npc.id, b"slot_weapon")) {
+            let item = dynamic_object_field::borrow_mut<vector<u8>, Item>(&mut npc.id, b"slot_weapon");
+            item::reduce_durability(item, outcome);
+        };
+        
+        // Check armor slot
+        if (dynamic_object_field::exists_(&npc.id, b"slot_armor")) {
+            let item = dynamic_object_field::borrow_mut<vector<u8>, Item>(&mut npc.id, b"slot_armor");
+            item::reduce_durability(item, outcome);
+        };
+        
+        // Check tool_1 slot
+        if (dynamic_object_field::exists_(&npc.id, b"slot_tool_1")) {
+            let item = dynamic_object_field::borrow_mut<vector<u8>, Item>(&mut npc.id, b"slot_tool_1");
+            item::reduce_durability(item, outcome);
+        };
+        
+        // Check tool_2 slot
+        if (dynamic_object_field::exists_(&npc.id, b"slot_tool_2")) {
+            let item = dynamic_object_field::borrow_mut<vector<u8>, Item>(&mut npc.id, b"slot_tool_2");
+            item::reduce_durability(item, outcome);
+        };
+    }
+    
+    // ==================== PHASE 3: SKILL SYSTEM FUNCTIONS ====================
+    
+    /// Learn a skill using available skill points
+    public entry fun learn_skill(
+        npc: &mut NPC,
+        skill_id: u8,
+        ctx: &mut TxContext
+    ) {
+        // Verify ownership
+        assert!(npc.owner == tx_context::sender(ctx), E_NOT_OWNER);
+        
+        // Check has skill points
+        assert!(npc.skill_points > 0, E_NO_SKILL_POINTS);
+        
+        // Validate skill ID
+        assert!(skill_id <= SKILL_ENDURANCE, E_INVALID_SKILL);
+        
+        // Check not already learned
+        assert!(!vector::contains(&npc.skills, &skill_id), SKILL_ALREADY_LEARNED);
+        
+        // Learn skill
+        vector::push_back(&mut npc.skills, skill_id);
+        npc.skill_points = npc.skill_points - 1;
+        
+        // Apply permanent stat bonuses if applicable
+        if (skill_id == SKILL_TOUGH) {
+            npc.max_hp = npc.max_hp + 20;
+            npc.current_hp = npc.current_hp + 20;
+        } else if (skill_id == SKILL_ENDURANCE) {
+            npc.max_stamina = npc.max_stamina + 20;
+            npc.current_stamina = npc.current_stamina + 20;
+        };
+    }
+    
+    /// Respec all skills (first time free, then costs 0.1 SUI)
+    public entry fun respec_skills(
+        npc: &mut NPC,
+        mut payment: Coin<SUI>,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        // Verify ownership
+        assert!(npc.owner == tx_context::sender(ctx), E_NOT_OWNER);
+        
+        // Check has skills to respec
+        assert!(vector::length(&npc.skills) > 0, E_NO_SKILLS_TO_RESPEC);
+        
+        // Check payment if not first time
+        if (npc.respec_count > 0) {
+            let amount = coin::value(&payment);
+            assert!(amount >= RESPEC_COST_SUI, E_INSUFFICIENT_PAYMENT);
+            
+            // Burn the SUI payment
+            let burn_amount = coin::split(&mut payment, RESPEC_COST_SUI, ctx);
+            transfer::public_transfer(burn_amount, @0x0);
+        };
+        
+        // Return remaining payment
+        transfer::public_transfer(payment, tx_context::sender(ctx));
+        
+        // Count skills and remove permanent bonuses
+        let skill_count = vector::length(&npc.skills);
+        let mut i = 0;
+        while (i < skill_count) {
+            let skill = *vector::borrow(&npc.skills, i);
+            
+            // Reverse permanent bonuses
+            if (skill == SKILL_TOUGH) {
+                npc.max_hp = npc.max_hp - 20;
+                if (npc.current_hp > npc.max_hp) {
+                    npc.current_hp = npc.max_hp;
+                };
+            } else if (skill == SKILL_ENDURANCE) {
+                npc.max_stamina = npc.max_stamina - 20;
+                if (npc.current_stamina > npc.max_stamina) {
+                    npc.current_stamina = npc.max_stamina;
+                };
+            };
+            
+            i = i + 1;
+        };
+        
+        // Clear all skills
+        npc.skills = vector::empty();
+        
+        // Refund all skill points
+        npc.skill_points = npc.skill_points + skill_count;
+        
+        // Increment respec count
+        npc.respec_count = npc.respec_count + 1;
+        
+        // Emit event
+        utils::emit_skills_respec_event(
+            object::uid_to_address(&npc.id),
+            npc.owner,
+            npc.respec_count,
+            clock
+        );
+    }
+    
+    /// Grant skill point (called by expedition.move when NPC levels up)
+    public(package) fun grant_skill_point(npc: &mut NPC) {
+        npc.skill_points = npc.skill_points + 1;
+    }
+    
+    /// Check if NPC has a specific skill
+    public fun has_skill(npc: &NPC, skill_id: u8): bool {
+        vector::contains(&npc.skills, &skill_id)
+    }
+    
+    /// Get available skill points
+    public fun get_skill_points(npc: &NPC): u64 {
+        npc.skill_points
+    }
+    
+    /// Get respec count
+    public fun get_respec_count(npc: &NPC): u64 {
+        npc.respec_count
+    }
+    
+    /// Get all learned skills
+    public fun get_learned_skills(npc: &NPC): vector<u8> {
+        npc.skills
     }
 }

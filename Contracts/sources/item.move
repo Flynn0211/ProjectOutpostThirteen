@@ -24,18 +24,48 @@ module contracts::item {
     const RARITY_EPIC: u8 = 3;
     const RARITY_LEGENDARY: u8 = 4;
     
+    // ============ PHASE 3: Độ Bền (Durability) ============
+    
+    // Độ bền tối đa theo độ hiếm
+    const DURABILITY_COMMON: u64 = 100;       // Phổ thông
+    const DURABILITY_RARE: u64 = 200;         // Hiếm
+    const DURABILITY_EPIC: u64 = 300;         // Sử thi
+    const DURABILITY_LEGENDARY: u64 = 500;     // Huyền thoại
+    
+    // Tốc độ giảm độ bền (theo kết quả thám hiểm)
+    const DECAY_CRITICAL_SUCCESS: u64 = 1;     // Thắng lớn: -1
+    const DECAY_SUCCESS: u64 = 2;              // Thắng: -2
+    const DECAY_PARTIAL_SUCCESS: u64 = 3;      // Thắng một phần: -3
+    const DECAY_FAILURE: u64 = 5;              // Thua: -5
+    const DECAY_CRITICAL_FAILURE: u64 = 10;    // Thua thảm: -10
+    
+    // Chi phí sửa chữa
+    const REPAIR_COST_SCRAP_PER_DURABILITY: u64 = 2;    // 2 Scrap/1 độ bền
+    const REPAIR_COST_SUI: u64 = 10_000_000;            // 0.01 SUI (phí cố định)
+    
+    // Mã lỗi
+    const E_ITEM_NOT_DAMAGED: u64 = 1000;      // Vật phẩm chưa hỏng
+    const E_NOT_OWNER: u64 = 1002;             // Không phải chủ sở hữu
+    const E_INSUFFICIENT_PAYMENT: u64 = 1003;  // Không đủ thanh toán
+    
     // ============ Structs ============
     
-    /// Item object - vật phẩm hiếm có thể equip
-     public struct Item has key, store {
+    /// Vật phẩm - có thể trang bị hoặc tiêu hao
+    public struct Item has key, store {
         id: UID,
         name: String,
-        rarity: u8,           // 1-4 (Common to Legendary)
-        item_type: u8,        // 1-3 (Equip), 4-6 (Consumable), 99 (Collectible)
-        hp_bonus: u64,        // Bonus HP
-        attack_bonus: u64,    // Bonus Attack
-        defense_bonus: u64,   // Bonus Defense
-        luck_bonus: u64,      // Bonus Luck
+        rarity: u8,           // Độ hiếm: 1-4 (Common → Legendary)
+        item_type: u8,        // Loại: 1-3 (Trang bị), 4-6 (Tiêu hao), 99 (Sưu tầm)
+        
+        // Phase 3: Hệ thống độ bền
+        durability: u64,      // Độ bền hiện tại (0 = hỏng)
+        max_durability: u64,  // Độ bền tối đa (dựa vào rarity)
+        
+        // Chỉ số tăng thêm
+        hp_bonus: u64,        // Tăng máu
+        attack_bonus: u64,    // Tăng tấn công
+        defense_bonus: u64,   // Tăng phòng thủ
+        luck_bonus: u64,      // Tăng may mắn
     }
     
     // ============ Events ============
@@ -88,11 +118,16 @@ module contracts::item {
         // Generate name
         let name = generate_item_name(item_type, rarity);
         
+        // Phase 3: Calculate max durability
+        let max_dur = get_max_durability_for_rarity(rarity);
+        
         let item = Item {
             id: object::new(ctx),
             name,
             rarity,
             item_type,
+            durability: max_dur,      // Start at full
+            max_durability: max_dur,
             hp_bonus: hp,
             attack_bonus: atk,
             defense_bonus: def,
@@ -113,9 +148,51 @@ module contracts::item {
         transfer::public_transfer(item, sender);
     }
     
+    /// Phase 3: Create item with specific params (for crafting)
+    public fun create_item_with_params(
+        item_type: u8,
+        rarity: u8,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ): Item {
+        // Calculate stats dựa trên rarity và type
+        let (hp, atk, def, luck) = calculate_item_stats(rarity, item_type, clock, ctx);
+        
+        // Generate name
+        let name = generate_item_name(item_type, rarity);
+        
+        // Calculate max durability
+        let max_dur = get_max_durability_for_rarity(rarity);
+        
+        let item = Item {
+            id: object::new(ctx),
+            name,
+            rarity,
+            item_type,
+            durability: max_dur,
+            max_durability: max_dur,
+            hp_bonus: hp,
+            attack_bonus: atk,
+            defense_bonus: def,
+            luck_bonus: luck,
+        };
+        
+        let sender = tx_context::sender(ctx);
+        
+        event::emit(ItemCreated {
+            item_id: object::id(&item),
+            name: item.name,
+            rarity: item.rarity,
+            item_type: item.item_type,
+            owner: sender,
+        });
+        
+        item  // Return item instead of transferring
+    }
+    
     /// Destroy item (khi cần clean up hoặc dùng item)
     public entry fun destroy_item(item: Item) {
-        let Item { id, name, rarity: _, item_type: _, hp_bonus: _, attack_bonus: _, defense_bonus: _, luck_bonus: _ } = item;
+        let Item { id, name, rarity: _, item_type: _, durability: _, max_durability: _, hp_bonus: _, attack_bonus: _, defense_bonus: _, luck_bonus: _ } = item;
         
         event::emit(ItemDestroyed {
             item_id: object::uid_to_inner(&id),
@@ -123,6 +200,103 @@ module contracts::item {
         });
         
         object::delete(id);
+    }
+    
+    // ============ PHASE 3: Durability Functions ============
+    
+    /// Reduce durability after expedition
+    public fun reduce_durability(item: &mut Item, outcome: u8) {
+        let decay = if (outcome == 0) {
+            DECAY_CRITICAL_SUCCESS
+        } else if (outcome == 1) {
+            DECAY_SUCCESS
+        } else if (outcome == 2) {
+            DECAY_PARTIAL_SUCCESS
+        } else if (outcome == 3) {
+            DECAY_FAILURE
+        } else {
+            DECAY_CRITICAL_FAILURE
+        };
+        
+        if (item.durability > decay) {
+            item.durability = item.durability - decay;
+        } else {
+            item.durability = 0;  // Broken
+        };
+    }
+    
+    /// Check if item is broken
+    public fun is_broken(item: &Item): bool {
+        item.durability == 0
+    }
+    
+    /// Get effective bonuses (0 if broken)
+    public fun get_effective_attack(item: &Item): u64 {
+        if (is_broken(item)) { 0 } else { item.attack_bonus }
+    }
+    
+    public fun get_effective_defense(item: &Item): u64 {
+        if (is_broken(item)) { 0 } else { item.defense_bonus }
+    }
+    
+    public fun get_effective_hp(item: &Item): u64 {
+        if (is_broken(item)) { 0 } else { item.hp_bonus }
+    }
+    
+    public fun get_effective_luck(item: &Item): u64 {
+        if (is_broken(item)) { 0 } else { item.luck_bonus }
+    }
+    
+    /// Repair item to full durability
+    public entry fun repair_item(
+        item: &mut Item,
+        bunker: &mut contracts::bunker::Bunker,
+        mut payment: sui::coin::Coin<sui::sui::SUI>,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        use sui::coin;
+        use contracts::bunker;
+        
+        let sender = tx_context::sender(ctx);
+        assert!(bunker::get_owner(bunker) == sender, E_NOT_OWNER);
+        
+        // Calculate damage
+        let durability_lost = item.max_durability - item.durability;
+        assert!(durability_lost > 0, E_ITEM_NOT_DAMAGED);
+        
+        // Calculate costs
+        let scrap_cost = durability_lost * REPAIR_COST_SCRAP_PER_DURABILITY;
+        let sui_cost = REPAIR_COST_SUI;
+        
+        // Verify resources
+        assert!(coin::value(&payment) >= sui_cost, E_INSUFFICIENT_PAYMENT);
+        
+        // Consume scrap from bunker
+        bunker::consume_scrap(bunker, scrap_cost);
+        
+        // Burn SUI (deflationary)
+        let sui_coin = coin::split(&mut payment, sui_cost, ctx);
+        transfer::public_transfer(sui_coin, @0x0);
+        
+        // Return excess
+        if (coin::value(&payment) > 0) {
+            transfer::public_transfer(payment, sender);
+        } else {
+            coin::destroy_zero(payment);
+        };
+        
+        // Restore durability
+        item.durability = item.max_durability;
+        
+        // Emit event
+        utils::emit_item_repaired_event(
+            object::id(item),
+            sender,
+            durability_lost,
+            scrap_cost,
+            clock
+        );
     }
     
     // ============ Getters ============
@@ -158,7 +332,18 @@ module contracts::item {
     public fun get_name(item: &Item): String {
         item.name
     }
+    
+    // Phase 3: Durability getters
+    public fun get_durability(item: &Item): u64 { item.durability }
+    public fun get_max_durability(item: &Item): u64 { item.max_durability }
+    public fun get_durability_percent(item: &Item): u64 {
+        if (item.max_durability == 0) { 0 }
+        else { (item.durability * 100) / item.max_durability }
+    }
 
+    public fun type_weapon(): u8 { TYPE_WEAPON }
+    public fun type_armor(): u8 { TYPE_ARMOR }
+    public fun type_tool(): u8 { TYPE_TOOL }
     public fun type_revival_potion(): u8 {
         TYPE_REVIVAL_POTION
     }
@@ -231,5 +416,18 @@ module contracts::item {
         
         string::append(&mut rarity_name, type_name);
         rarity_name
+    }
+    
+    // Phase 3: Helper for durability
+    fun get_max_durability_for_rarity(rarity: u8): u64 {
+        if (rarity == RARITY_COMMON) {
+            DURABILITY_COMMON
+        } else if (rarity == RARITY_RARE) {
+            DURABILITY_RARE
+        } else if (rarity == RARITY_EPIC) {
+            DURABILITY_EPIC
+        } else {
+            DURABILITY_LEGENDARY
+        }
     }
 }

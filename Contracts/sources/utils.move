@@ -89,6 +89,20 @@ module contracts::utils {
     const MYTHIC_HP_MAX: u64 = 280;
     const MYTHIC_STAMINA_MIN: u64 = 230;
     const MYTHIC_STAMINA_MAX: u64 = 280;
+    
+    // ==================== STRENGTH STAT RANGES (Phase 1) ====================
+    const STRENGTH_COMMON_MIN: u64 = 50;
+    const STRENGTH_COMMON_MAX: u64 = 70;
+    const STRENGTH_UNCOMMON_MIN: u64 = 70;
+    const STRENGTH_UNCOMMON_MAX: u64 = 90;
+    const STRENGTH_RARE_MIN: u64 = 90;
+    const STRENGTH_RARE_MAX: u64 = 120;
+    const STRENGTH_EPIC_MIN: u64 = 120;
+    const STRENGTH_EPIC_MAX: u64 = 160;
+    const STRENGTH_LEGENDARY_MIN: u64 = 160;
+    const STRENGTH_LEGENDARY_MAX: u64 = 200;
+    const STRENGTH_MYTHIC_MIN: u64 = 200;
+    const STRENGTH_MYTHIC_MAX: u64 = 250;
 
     // ==================== ERROR CODES ====================
     const E_INVALID_RARITY: u64 = 1;
@@ -116,12 +130,14 @@ module contracts::utils {
         timestamp: u64,
     }
 
-    /// Event khi expedition kết thúc
+    /// Event khi expedition kết thúc (v2.0: split resources)
     public struct ExpeditionResultEvent has copy, drop {
         npc_id: address,
         owner: address,
         success: bool,
-        resources_gained: u64,
+        food_gained: u64,
+        water_gained: u64,
+        scrap_gained: u64,
         items_gained: u64,
         damage_taken: u64,
         timestamp: u64,
@@ -162,6 +178,138 @@ module contracts::utils {
         owner: address,
         new_level: u64,
         new_capacity: u64,
+        timestamp: u64,
+    }
+
+    // ==================== PHASE 1 EVENTS ====================
+    
+    /// Event khi thu hoạch production từ room
+    public struct ProductionCollectedEvent has copy, drop {
+        bunker_id: address,
+        room_index: u64,
+        amount: u64,
+        resource_type: u8,  // 0=Food, 1=Water, 2=Power
+        timestamp: u64,
+    }
+
+    /// Event khi assign NPC vào room
+    public struct WorkAssignedEvent has copy, drop {
+        npc_id: address,
+        bunker_id: address,
+        room_index: u64,
+        timestamp: u64,
+    }
+
+    /// Event khi NPC đói/khát
+    public struct NPCStarvingEvent has copy, drop {
+        npc_id: address,
+        hunger: u64,
+        thirst: u64,
+        hp_lost: u64,
+        timestamp: u64,
+    }
+
+    // ==================== PHASE 2 EVENTS (Marketplace) ====================
+    
+    /// Event khi list NPC
+    public struct NPCListedEvent has copy, drop {
+        npc_id: address,
+        seller: address,
+        price: u64,
+        timestamp: u64,
+    }
+    
+    /// Event khi NPC sold
+    public struct NPCSoldEvent has copy, drop {
+        npc_id: address,
+        seller: address,
+        buyer: address,
+        price: u64,
+        fee: u64,
+        timestamp: u64,
+    }
+    
+    /// Event khi list Item
+    public struct ItemListedEvent has copy, drop {
+        item_id: address,
+        seller: address,
+        price: u64,
+        timestamp: u64,
+    }
+    
+    /// Event khi Item sold
+    public struct ItemSoldEvent has copy, drop {
+        item_id: address,
+        seller: address,
+        buyer: address,
+        price: u64,
+        fee: u64,
+        timestamp: u64,
+    }
+    
+    /// Event khi list Resource Bundle
+    public struct BundleListedEvent has copy, drop {
+        listing_id: address,
+        seller: address,
+        resource_type: u8,
+        amount: u64,
+        price: u64,
+        timestamp: u64,
+    }
+    
+    /// Event khi Bundle sold
+    public struct BundleSoldEvent has copy, drop {
+        listing_id: address,
+        seller: address,
+        buyer: address,
+        resource_type: u8,
+        amount: u64,
+        price: u64,
+        fee: u64,
+        timestamp: u64,
+    }
+
+    // ==================== PHASE 3 EVENTS (Crafting & Progression) ====================
+    
+    /// Event khi item đã được repair
+    public struct ItemRepairedEvent has copy, drop {
+        item_id: address,
+        owner: address,
+        durability_restored: u64,
+        scrap_cost: u64,
+        timestamp: u64,
+    }
+    
+    /// Event khi item được craft
+    public struct ItemCraftedEvent has copy, drop {
+        item_id: address,
+        crafter: address,
+        item_type: u8,
+        scrap_cost: u64,
+        timestamp: u64,
+    }
+    
+    /// Event khi blueprint dropped
+    public struct BlueprintDroppedEvent has copy, drop {
+        blueprint_id: address,
+        receiver: address,
+        item_type: u8,
+        rarity: u8,
+        timestamp: u64,
+    }
+    
+    /// Event khi blueprint exhausted
+    public struct BlueprintExhaustedEvent has copy, drop {
+        blueprint_id: address,
+        owner: address,
+        timestamp: u64,
+    }
+    
+    /// Event khi respec skills
+    public struct SkillsRespecEvent has copy, drop {
+        npc_id: address,
+        owner: address,
+        respec_count: u64,
         timestamp: u64,
     }
 
@@ -316,6 +464,25 @@ module contracts::utils {
         }
     }
 
+    /// Lấy khoảng Strength cho rarity (Phase 1)
+    public fun get_strength_range_for_rarity(rarity: u8): (u64, u64) {
+        if (rarity == RARITY_COMMON) {
+            (STRENGTH_COMMON_MIN, STRENGTH_COMMON_MAX)
+        } else if (rarity == RARITY_UNCOMMON) {
+            (STRENGTH_UNCOMMON_MIN, STRENGTH_UNCOMMON_MAX)
+        } else if (rarity == RARITY_RARE) {
+            (STRENGTH_RARE_MIN, STRENGTH_RARE_MAX)
+        } else if (rarity == RARITY_EPIC) {
+            (STRENGTH_EPIC_MIN, STRENGTH_EPIC_MAX)
+        } else if (rarity == RARITY_LEGENDARY) {
+            (STRENGTH_LEGENDARY_MIN, STRENGTH_LEGENDARY_MAX)
+        } else if (rarity == RARITY_MYTHIC) {
+            (STRENGTH_MYTHIC_MIN, STRENGTH_MYTHIC_MAX)
+        } else {
+            abort E_INVALID_RARITY
+        }
+    }
+
     /// Lấy khoảng Stamina cho rarity
     public fun get_stamina_range_for_rarity(rarity: u8): (u64, u64) {
         if (rarity == RARITY_COMMON) {
@@ -398,7 +565,9 @@ module contracts::utils {
         npc_id: address,
         owner: address,
         success: bool,
-        resources_gained: u64,
+        food_gained: u64,
+        water_gained: u64,
+        scrap_gained: u64,
         items_gained: u64,
         damage_taken: u64,
         clock: &Clock,
@@ -407,7 +576,9 @@ module contracts::utils {
             npc_id,
             owner,
             success,
-            resources_gained,
+            food_gained,
+            water_gained,
+            scrap_gained,
             items_gained,
             damage_taken,
             timestamp: clock::timestamp_ms(clock),
@@ -476,6 +647,236 @@ module contracts::utils {
             owner,
             new_level,
             new_capacity,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+
+    // ==================== PHASE 1 EVENT EMITTERS ====================
+    
+    public fun emit_production_collected_event(
+        bunker_id: address,
+        room_index: u64,
+        amount: u64,
+        resource_type: u8,
+        clock: &Clock,
+    ) {
+        event::emit(ProductionCollectedEvent {
+            bunker_id,
+            room_index,
+            amount,
+            resource_type,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+
+    public fun emit_work_assigned_event(
+        npc_id: address,
+        bunker_id: address,
+        room_index: u64,
+        clock: &Clock,
+    ) {
+        event::emit(WorkAssignedEvent {
+            npc_id,
+            bunker_id,
+            room_index,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+
+    public fun emit_npc_starving_event(
+        npc_id: address,
+        hunger: u64,
+        thirst: u64,
+        hp_lost: u64,
+        clock: &Clock,
+    ) {
+        event::emit(NPCStarvingEvent {
+            npc_id,
+            hunger,
+            thirst,
+            hp_lost,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+
+    // ==================== PHASE 2 EVENT EMITTERS (Marketplace) ====================
+    
+    public fun emit_npc_listed_event(
+        npc_id: sui::object::ID,
+        seller: address,
+        price: u64,
+        clock: &Clock,
+    ) {
+        event::emit(NPCListedEvent {
+            npc_id: sui::object::id_to_address(&npc_id),
+            seller,
+            price,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+    
+    public fun emit_npc_sold_event(
+        npc_id: sui::object::ID,
+        seller: address,
+        buyer: address,
+        price: u64,
+        fee: u64,
+        clock: &Clock,
+    ) {
+        event::emit(NPCSoldEvent {
+            npc_id: sui::object::id_to_address(&npc_id),
+            seller,
+            buyer,
+            price,
+            fee,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+    
+    public fun emit_item_listed_event(
+        item_id: sui::object::ID,
+        seller: address,
+        price: u64,
+        clock: &Clock,
+    ) {
+        event::emit(ItemListedEvent {
+            item_id: sui::object::id_to_address(&item_id),
+            seller,
+            price,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+    
+    public fun emit_item_sold_event(
+        item_id: sui::object::ID,
+        seller: address,
+        buyer: address,
+        price: u64,
+        fee: u64,
+        clock: &Clock,
+    ) {
+        event::emit(ItemSoldEvent {
+            item_id: sui::object::id_to_address(&item_id),
+            seller,
+            buyer,
+            price,
+            fee,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+    
+    public fun emit_bundle_listed_event(
+        listing_id: sui::object::ID,
+        seller: address,
+        resource_type: u8,
+        amount: u64,
+        price: u64,
+        clock: &Clock,
+    ) {
+        event::emit(BundleListedEvent {
+            listing_id: sui::object::id_to_address(&listing_id),
+            seller,
+            resource_type,
+            amount,
+            price,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+    
+    public fun emit_bundle_sold_event(
+        listing_id: sui::object::ID,
+        seller: address,
+        buyer: address,
+        resource_type: u8,
+        amount: u64,
+        price: u64,
+        fee: u64,
+        clock: &Clock,
+    ) {
+        event::emit(BundleSoldEvent {
+            listing_id: sui::object::id_to_address(&listing_id),
+            seller,
+            buyer,
+            resource_type,
+            amount,
+            price,
+            fee,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+
+    // ==================== PHASE 3 EVENT EMITTERS (Crafting & Progression) ====================
+    
+    public fun emit_item_repaired_event(
+        item_id: sui::object::ID,
+        owner: address,
+        durability_restored: u64,
+        scrap_cost: u64,
+        clock: &Clock,
+    ) {
+        event::emit(ItemRepairedEvent {
+            item_id: sui::object::id_to_address(&item_id),
+            owner,
+            durability_restored,
+            scrap_cost,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+    
+    public fun emit_item_crafted_event(
+        item_id: sui::object::ID,
+        crafter: address,
+        item_type: u8,
+        scrap_cost: u64,
+        clock: &Clock,
+    ) {
+        event::emit(ItemCraftedEvent {
+            item_id: sui::object::id_to_address(&item_id),
+            crafter,
+            item_type,
+            scrap_cost,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+    
+    public fun emit_blueprint_dropped_event(
+        blueprint_id: sui::object::ID,
+        receiver: address,
+        item_type: u8,
+        rarity: u8,
+        clock: &Clock,
+    ) {
+        event::emit(BlueprintDroppedEvent {
+            blueprint_id: sui::object::id_to_address(&blueprint_id),
+            receiver,
+            item_type,
+            rarity,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+    
+    public fun emit_blueprint_exhausted_event(
+        blueprint_id: sui::object::ID,
+        owner: address,
+        clock: &Clock,
+    ) {
+        event::emit(BlueprintExhaustedEvent {
+            blueprint_id: sui::object::id_to_address(&blueprint_id),
+            owner,
+            timestamp: clock::timestamp_ms(clock),
+        });
+    }
+    
+    public fun emit_skills_respec_event(
+        npc_id: address,
+        owner: address,
+        respec_count: u64,
+        clock: &Clock,
+    ) {
+        event::emit(SkillsRespecEvent {
+            npc_id,
+            owner,
+            respec_count,
             timestamp: clock::timestamp_ms(clock),
         });
     }

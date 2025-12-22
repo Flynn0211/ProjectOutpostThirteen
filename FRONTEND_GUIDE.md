@@ -53,6 +53,22 @@ Vì logic random thực hiện on-chain, Frontend **KHÔNG THỂ** biết kết 
   - Đợi 1 giờ để tự hồi (natural recovery)
   - Instant recovery (tốn 100 bunker resources)
 
+**4. `RaidResult`** (Module: `raid`) ⚔️ NEW!
+
+- **Khi nào**: Sau mỗi lần raid (Phase 4 - PvP)
+- **Dữ liệu**:
+  - `attacker`, `defender`: Addresses
+  - `attacker_npc_count`: Số NPC tham gia
+  - `success`: bool - Kẻ tấn công thắng hay thua
+  - `attacker_power`, `defender_power`: Combat powers
+  - `food_looted`, `water_looted`, `scrap_looted`: Tài nguyên cướp được
+  - `timestamp`: Thời điểm raid
+- **Frontend Action**:
+  - Hiển thị kết quả chiến đấu với animation
+  - Nếu `success = true`: Show resources looted
+  - Nếu `success = false`: Show defense successful message
+  - Cập nhật bunker resources và raid history
+
 ---
 
 ## 🎮 Tương Tác (Move Calls)
@@ -216,14 +232,15 @@ Nếu transaction thất bại, check error code:
 
 ## 🎯 Code Quality
 
-**Version:** v2.0.1 (Production Ready)
+**Version:** v4.0 (Production Ready - All Phases Complete!)
 
 - ✅ Clean code - Test functions removed
 - ✅ No duplicate code
 - ✅ Comprehensive error handling
 - ✅ Complete event system
 - ✅ Full Vietnamese comments
+- ✅ **Phase 4 - PvP Raid System** complete
 
 ---
 
-_Tài liệu này được tạo và cập nhật bởi Antigravity Agent - Last updated: 2025-12-21_
+_Tài liệu này được tạo và cập nhật bởi Antigravity Agent - Last updated: 2025-12-22_

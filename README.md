@@ -4,7 +4,28 @@
 
 ## 🎉 Latest Updates
 
-**Version 2.0** - Roadmap Complete! 🚀
+**Version 4.0** - Full Roadmap Complete! 🚀
+
+### Phase 4: PvP Raid System ⚔️ (NEW!)
+
+- ✅ **Bunker Raiding**: Tấn công bunker của người chơi khác để cướp tài nguyên
+- ✅ **Raid Costs**: 50 Scrap + 0.1 SUI (burned) mỗi lần tấn công
+- ✅ **Cooldown System**: 24 giờ cooldown/defender, tối đa 3 raids/ngày
+- ✅ **Loot System**: Kẻ tấn công nhận 20% tài nguyên khi thắng
+- ✅ **Home Advantage**: Người phòng thủ +10% sức mạnh
+- ✅ **Defense Rewards**: +10 Scrap khi phòng thủ thành công
+
+### Phase 3: Advanced Systems
+
+- ✅ **Durability System**: Vật phẩm giảm độ bền theo expedition outcomes
+- ✅ **Crafting & Blueprints**: Craft items từ blueprints với Scrap
+- ✅ **Skill Tree**: 10 kỹ năng, skill points mỗi level, respec system
+
+### Phase 2: Economy
+
+- ✅ **Marketplace**: Trade NPCs, Items, Resources với 2% platform fee
+
+### Phase 1: Core Gameplay
 
 - ✅ **Knockdown & Recovery System**: NPC không còn permanent death, thay vào đó là knocked out và có thể hồi phục
 - ✅ **Multi-Slot Equipment**: 4 slots độc lập (weapon, armor, tool×2) thay vì single slot
@@ -88,9 +109,18 @@ graph TD
     - **Rủi ro**: Critical Failure → NPC bị **Knocked Out** (không còn permanent death)
 
 5.  **Recovery System**:
+
     - **Natural Recovery**: Đợi 1 giờ, hồi 60% HP/Stamina
     - **Instant Recovery**: Tiêu 100 resources, hồi 80% HP/Stamina ngay lập tức
     - **Revival Potion**: Hồi sinh từ knocked state, restore 50% HP/Stamina
+
+6.  **Raid System** (Phase 4 - PvP):
+    - **Shared Object**: `RaidHistory` theo dõi cooldowns và daily limits
+    - **Costs**: 50 Scrap + 0.1 SUI (burned) mỗi lần tấn công
+    - **Limits**: 24h cooldown/defender, max 3 raids/ngày
+    - **Combat**: Simplified power (NPC count × 100 vs Bunker level × 100)
+    - **Loot**: 20% tài nguyên (Food, Water, Scrap) khi thắng
+    - **Defense**: +10% home advantage, +10 Scrap reward khi thắng
 
 ---
 
@@ -214,6 +244,23 @@ Xử lý logic thám hiểm với refined calculations:
 
 - Quản lý tài nguyên và nâng cấp hầm trú ẩn.
 - `consume_resources`: Dùng cho instant recovery
+
+### 6. `raid.move` (Hệ thống PvP Raid) ⚔️ NEW!
+
+**Phase 4 - Bunker Raiding**:
+
+- **Struct `RaidHistory`**: Shared object theo dõi toàn bộ raid history
+  - `last_raid_times`: Cooldown tracking (24h/defender)
+  - `daily_raid_counts`: Daily limit tracking (3/day/attacker)
+- **`start_raid`**: Main raid function
+  - Cost: 50 Scrap + 0.1 SUI (burned)
+  - Combat: Simplified NPC count vs Bunker level
+  - Loot: 20% resources on win
+  - Events: `RaidResult` với đầy đủ battle details
+- **View Functions**:
+  - `get_raid_cooldown_remaining`: Check cooldown
+  - `get_remaining_raids_today`: Check daily limit
+- **Deflationary**: SUI burned mỗi raid → giảm supply
 
 ---
 

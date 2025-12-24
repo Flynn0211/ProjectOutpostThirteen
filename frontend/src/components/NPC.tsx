@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { NPC as NPCType } from "../types";
-import { getNPCSpriteUrl } from "../utils/imageUtils";
+import type { NPC as NPCType } from "../types";
+import { getNPCSpriteUrl, getNPCIdleFrameOffset, getNPCWalkFrameOffset } from "../utils/imageUtils";
 
 interface NPCProps {
   npc: NPCType;
@@ -11,7 +11,6 @@ interface NPCProps {
 export function NPCComponent({ npc, position, isWalking }: NPCProps) {
   const [frame, setFrame] = useState(0);
   const spriteUrl = getNPCSpriteUrl(npc.rarity, npc.profession);
-  const animationType = isWalking ? "walk" : "idle";
   const frameWidth = 128;
   const frameHeight = 128;
 
@@ -22,11 +21,13 @@ export function NPCComponent({ npc, position, isWalking }: NPCProps) {
     }
 
     const interval = setInterval(() => {
-      setFrame((prev) => (prev + 1) % 4); // Assume 4 frames for walk animation
+      setFrame((prev) => (prev + 1) % 4); // 4 frames for walk animation
     }, 200); // Change frame every 200ms
 
     return () => clearInterval(interval);
   }, [isWalking]);
+
+  const offsetX = isWalking ? getNPCWalkFrameOffset(frame) : getNPCIdleFrameOffset(frame);
 
   return (
     <div
@@ -43,7 +44,7 @@ export function NPCComponent({ npc, position, isWalking }: NPCProps) {
         className="w-full h-full bg-contain bg-no-repeat"
         style={{
           backgroundImage: `url(${spriteUrl})`,
-          backgroundPosition: `-${frame * frameWidth}px 0`,
+          backgroundPosition: `${offsetX}px 0`,
         }}
       />
     </div>

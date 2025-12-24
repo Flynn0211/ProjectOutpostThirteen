@@ -1,40 +1,93 @@
 import { useState } from "react";
-import { Room as RoomType } from "../types";
+import type { Room as RoomType } from "../types";
 import { getRoomImageUrl } from "../utils/imageUtils";
 import { ROOM_TYPE_NAMES } from "../constants";
 import { NPCComponent } from "./NPC";
 import { AssignNPCModal } from "./AssignNPCModal";
+import { useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
+import { TransactionBlock } from "@mysten/sui.js/transactions";
+import { PACKAGE_ID } from "../constants";
 
 interface RoomProps {
   room: RoomType;
   roomIndex: number;
   npcs: any[];
   bunkerId?: string;
+  onRefresh?: () => void;
 }
 
-export function RoomComponent({ room, roomIndex, npcs, bunkerId }: RoomProps) {
+export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh }: RoomProps) {
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
   const roomImageUrl = getRoomImageUrl(room.room_type);
   const roomName = ROOM_TYPE_NAMES[room.room_type as keyof typeof ROOM_TYPE_NAMES] || "Unknown";
+
+  const canCollect = bunkerId && (room.room_type === 2 || room.room_type === 3); // FARM or WATER_PUMP
+
+  const handleCollect = async () => {
+    if (!bunkerId) return;
+    try {
+      const tx = new TransactionBlock();
+      tx.moveCall({
+        target: `${PACKAGE_ID}::bunker::collect_production`,
+        arguments: [
+          tx.object(bunkerId),
+          tx.pure(roomIndex, "u64"),
+          tx.object("0x6"), // Clock
+        ],
+      });
+      signAndExecute(
+        { transactionBlock: tx },
+        {
+          onSuccess: () => {
+            if (onRefresh) onRefresh();
+          },
+          onError: (error: any) => {
+            alert("Collect failed: " + error.message);
+          },
+        }
+      );
+    } catch (error: any) {
+      alert("Collect failed: " + error.message);
+    }
+  };
 
   return (
     <>
       <div
-        className="relative w-64 h-64 bg-gray-800 rounded-lg overflow-hidden border-2 border-gray-700 cursor-pointer hover:border-blue-500 transition-colors"
+        className="relative flex-shrink-0 rounded-xl overflow-hidden border-3 border-[#4deeac] bg-[#2a3447] cursor-pointer transition-all shadow-[0_0_20px_rgba(77,238,172,0.3)] hover:border-[#5fffc0] hover:shadow-[0_0_30px_rgba(77,238,172,0.6)]"
+        style={{ width: "384px", height: "192px" }}
         onClick={() => bunkerId && setShowAssignModal(true)}
       >
         {/* Room image */}
         <img
           src={roomImageUrl}
           alt={roomName}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-cover brightness-110 contrast-105"
         />
         
+        {/* Light overlay instead of dark */}
+        <div className="absolute inset-0 bg-gradient-to-t from-[#1a1f2e]/80 via-transparent to-transparent" />
+
         {/* Room info overlay */}
-        <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-2 text-white text-xs">
-          <div className="font-bold">{roomName}</div>
-          <div>Level {room.level}</div>
-          <div>{room.assigned_npcs}/{room.capacity} NPCs</div>
+        <div className="absolute bottom-0 left-0 right-0 px-3 py-3">
+          <div className="bg-[#2a3447] border-2 border-[#4deeac] rounded-lg px-3 py-2 text-white text-xs flex items-center justify-between gap-2 shadow-[0_0_10px_rgba(77,238,172,0.4)]">
+            <div>
+              <div className="font-bold text-sm leading-tight text-[#4deeac]">{roomName}</div>
+              <div className="text-[11px] text-white">Level {room.level}</div>
+            </div>
+            <div className="text-[11px] font-bold text-white bg-[#4deeac] rounded-full px-3 py-1">
+              {room.assigned_npcs}/{room.capacity} NPCs
+            </div>
+            {canCollect && (
+              <button
+                onClick={(e) => { e.stopPropagation(); handleCollect(); }}
+                className="ml-auto px-3 py-1 text-[11px] font-bold bg-gradient-to-r from-[#4deeac] to-[#3dd69a] text-[#0d1117] rounded hover:scale-105 transition-all"
+              >
+                Collect
+              </button>
+            )}
+          </div>
         </div>
 
         {/* NPCs in room */}
@@ -43,7 +96,7 @@ export function RoomComponent({ room, roomIndex, npcs, bunkerId }: RoomProps) {
             <NPCComponent
               key={npc.id}
               npc={npc}
-              position={{ x: 50 + (index * 60), y: 100 }}
+              position={{ x: 40 + (index * 60), y: 52 }}
               isWalking={room.assigned_npcs > 0}
             />
           ))}
@@ -58,8 +111,7 @@ export function RoomComponent({ room, roomIndex, npcs, bunkerId }: RoomProps) {
           roomIndex={roomIndex}
           bunkerId={bunkerId}
           onSuccess={() => {
-            // Reload will be handled by parent
-            window.location.reload();
+            if (onRefresh) onRefresh();
           }}
         />
       )}

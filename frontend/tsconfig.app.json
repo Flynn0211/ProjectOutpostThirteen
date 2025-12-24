@@ -15,6 +15,9 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    "paths": {
+      "@mysten/sui.js/*": ["./node_modules/@mysten/sui.js/*"]
+    },
 
     /* Linting */
     "strict": true,

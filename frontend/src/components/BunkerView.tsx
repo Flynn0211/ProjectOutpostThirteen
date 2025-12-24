@@ -1,60 +1,70 @@
 import { useState, useEffect } from "react";
 import { useCurrentAccount } from "@mysten/dapp-kit";
 import { getOwnedObjects, getObjectType } from "../utils/sui";
-import { Bunker, Room } from "../types";
-import { ROOMS_PER_ROW, ROOM_TYPES, ROOM_TYPE_NAMES } from "../constants";
-import { getRoomImageUrl } from "../utils/imageUtils";
+import type { Bunker } from "../types";
 import { IMAGES } from "../constants";
 import { RoomComponent } from "./Room";
-import { NPCComponent } from "./NPC";
 import { CreateBunkerModal } from "./CreateBunkerModal";
+import { ResourcesBar } from "./ResourcesBar";
+import { AddRoomButton } from "./AddRoomButton";
 
 interface BunkerViewProps {
   onBunkerLoaded?: (bunkerId: string) => void;
+  refreshTick?: number;
 }
 
-export function BunkerView({ onBunkerLoaded }: BunkerViewProps) {
+export function BunkerView({ onBunkerLoaded, refreshTick }: BunkerViewProps) {
   const account = useCurrentAccount();
   const [bunker, setBunker] = useState<Bunker | null>(null);
   const [npcs, setNpcs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  useEffect(() => {
-    if (!account) return;
-
-    async function loadBunker() {
-      setLoading(true);
-      try {
-        // Fetch bunker
-        const bunkers = await getOwnedObjects(
-          account.address,
-          getObjectType("bunker", "Bunker")
-        );
-        
-        if (bunkers.length > 0) {
-          const bunkerData = bunkers[0] as Bunker;
-          setBunker(bunkerData);
-          if (onBunkerLoaded && bunkerData.id) {
-            onBunkerLoaded(bunkerData.id);
-          }
+  const loadBunkerData = async () => {
+    if (!account?.address) return;
+    
+    setLoading(true);
+    try {
+      // Fetch bunker
+      const bunkers = await getOwnedObjects(
+        account.address,
+        getObjectType("bunker", "Bunker")
+      );
+      
+      if (bunkers.length > 0) {
+        const bunkerData = bunkers[0] as Bunker;
+        setBunker(bunkerData);
+        if (onBunkerLoaded && bunkerData.id) {
+          onBunkerLoaded(bunkerData.id);
         }
-
-        // Fetch NPCs
-        const npcObjects = await getOwnedObjects(
-          account.address,
-          getObjectType("npc", "NPC")
-        );
-        setNpcs(npcObjects);
-      } catch (error) {
-        console.error("Error loading bunker:", error);
-      } finally {
-        setLoading(false);
       }
-    }
 
-    loadBunker();
+      // Fetch NPCs
+      const npcObjects = await getOwnedObjects(
+        account.address,
+        getObjectType("npc", "NPC")
+      );
+      setNpcs(npcObjects);
+    } catch (error) {
+      console.error("Error loading bunker:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadBunkerData();
+    // Poll for updates every 5 seconds
+    const interval = setInterval(loadBunkerData, 5000);
+    return () => clearInterval(interval);
   }, [account]);
+
+  // Trigger refresh when parent signals
+  useEffect(() => {
+    if (refreshTick !== undefined) {
+      loadBunkerData();
+    }
+  }, [refreshTick]);
 
   if (loading) {
     return (
@@ -82,81 +92,52 @@ export function BunkerView({ onBunkerLoaded }: BunkerViewProps) {
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSuccess={() => {
-            // Reload bunker
-            if (account) {
-              getOwnedObjects(account.address, getObjectType("bunker", "Bunker")).then(
-                (bunkers) => {
-                  if (bunkers.length > 0) {
-                    const bunkerData = bunkers[0] as Bunker;
-                    setBunker(bunkerData);
-                    if (onBunkerLoaded && bunkerData.id) {
-                      onBunkerLoaded(bunkerData.id);
-                    }
-                  }
-                }
-              );
-            }
+            setShowCreateModal(false);
+            loadBunkerData();
           }}
         />
       </>
     );
   }
 
-  // Organize rooms into rows (3 per row, from right to left)
   const rooms = bunker.rooms || [];
-  const rows: Room[][] = [];
-  for (let i = 0; i < rooms.length; i += ROOMS_PER_ROW) {
-    rows.push(rooms.slice(i, i + ROOMS_PER_ROW).reverse()); // Reverse for right-to-left
-  }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-gray-900">
-      {/* Background */}
+    <div className="relative w-full h-screen overflow-hidden">
+      {/* Sky / surface layer */}
       <div 
         className="absolute inset-0 bg-cover bg-center opacity-30"
         style={{ backgroundImage: `url(${IMAGES.background})` }}
       />
-      
-      {/* Ground section */}
-      <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-gray-800 to-transparent" />
+      <div className="absolute top-0 left-0 right-0 h-28 bg-gradient-to-b from-black/70 via-black/30 to-transparent" />
 
-      {/* Bunker info */}
-      <div className="absolute top-4 right-4 z-40 bg-gray-800/90 p-4 rounded-lg text-white">
-        <h2 className="text-xl font-bold mb-2">{bunker.name}</h2>
-        <div className="text-sm space-y-1">
-          <div>Level: {bunker.level}</div>
-          <div>Food: {bunker.food}</div>
-          <div>Water: {bunker.water}</div>
-          <div>Scrap: {bunker.scrap}</div>
-          <div>Power: {bunker.power_generation}/{bunker.power_consumption}</div>
-        </div>
-      </div>
+      {/* Resources bar centered top */}
+      <ResourcesBar bunker={bunker} />
 
-      {/* Rooms grid */}
-      <div className="absolute top-32 left-0 right-0 bottom-0 p-8">
-        <div className="flex flex-col gap-4 h-full">
-          {rows.map((row, rowIndex) => (
-            <div key={rowIndex} className="flex gap-4 justify-center">
-              {row.map((room, roomIndex) => {
-                const actualRoomIndex = rooms.length - (rowIndex * ROOMS_PER_ROW + row.length - roomIndex);
-                return (
-                  <RoomComponent
-                    key={`${rowIndex}-${roomIndex}`}
-                    room={room}
-                    roomIndex={actualRoomIndex}
-                    npcs={npcs.filter(npc => npc.assigned_room === actualRoomIndex)}
-                    bunkerId={bunker.id}
-                  />
-                );
-              })}
+      {/* Bunker grid - 3 rooms per row */}
+      <div className="absolute top-28 left-0 right-0 bottom-0 px-8 pb-20 overflow-y-auto overflow-x-hidden flex justify-center">
+        <div className="relative w-full max-w-[1250px]">
+          {/* Ground shadow */}
+          <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-b from-black/50 to-transparent" />
+
+          <div className="grid grid-cols-3 gap-6 pt-6 pb-10 justify-items-center">
+            {rooms.map((room, roomIndex) => (
+              <RoomComponent
+                key={roomIndex}
+                room={room}
+                roomIndex={roomIndex}
+                npcs={npcs.filter(npc => npc.assigned_room === roomIndex)}
+                bunkerId={bunker.id}
+                onRefresh={loadBunkerData}
+              />
+            ))}
+
+            <div className="flex-shrink-0">
+              <AddRoomButton
+                bunkerId={bunker.id}
+                onSuccess={loadBunkerData}
+              />
             </div>
-          ))}
-          
-          {/* Add room button */}
-          <div className="flex justify-center">
-            <button className="w-64 h-64 border-4 border-dashed border-gray-600 rounded-lg flex items-center justify-center text-6xl text-gray-400 hover:border-gray-500 hover:text-gray-300 transition-colors">
-              +
-            </button>
           </div>
         </div>
       </div>

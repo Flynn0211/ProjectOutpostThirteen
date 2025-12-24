@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useCurrentAccount, useSignAndExecuteTransaction } from "@mysten/dapp-kit";
-import { getFunctionName } from "../utils/sui";
+import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
+import { TransactionBlock } from "@mysten/sui.js/transactions";
 import { PACKAGE_ID } from "../constants";
 
 interface RaidModalProps {
@@ -11,60 +11,43 @@ interface RaidModalProps {
 
 export function RaidModal({ isOpen, onClose, bunkerId }: RaidModalProps) {
   const account = useCurrentAccount();
-  const { mutate: signAndExecute } = useSignAndExecuteTransaction();
+  const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
   const [npcCount, setNpcCount] = useState(1);
   const [targetBunkerId, setTargetBunkerId] = useState("");
+  const [raidHistoryId, setRaidHistoryId] = useState("");
   const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
 
   const handleRaid = async () => {
-    if (!account || !targetBunkerId) return;
+    if (!account?.address || !targetBunkerId || !raidHistoryId) {
+      alert("Missing target bunker or RaidHistory ID.");
+      return;
+    }
 
     setLoading(true);
     try {
-      // Get target bunker object
-      const targetBunker = await fetch(`https://fullnode.testnet.sui.io:443`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "sui_getObject",
-          params: [targetBunkerId, { showContent: true }],
-        }),
-      }).then((res) => res.json());
-
-      if (!targetBunker.result?.data) {
-        alert("Invalid bunker ID");
-        setLoading(false);
-        return;
-      }
-
+      const tx = new TransactionBlock();
+      const [coin] = tx.splitCoins(tx.gas, [tx.pure(100_000_000)]); // 0.1 SUI
+      tx.moveCall({
+        target: `${PACKAGE_ID}::raid::start_raid`,
+        arguments: [
+          tx.object(bunkerId),
+          tx.pure(npcCount, "u64"),
+          tx.object(targetBunkerId),
+          coin,
+          tx.object(raidHistoryId),
+          tx.object("0x6"), // Clock
+        ],
+      });
       signAndExecute(
-        {
-          transaction: {
-            kind: "moveCall",
-            data: {
-              package: PACKAGE_ID,
-              module: "raid",
-              function: "start_raid",
-              arguments: [
-                bunkerId,
-                npcCount,
-                targetBunkerId,
-                // payment will be handled by wallet
-              ],
-              typeArguments: [],
-            },
-          },
-        },
+        { transactionBlock: tx },
         {
           onSuccess: () => {
             alert("Raid started!");
             onClose();
           },
-          onError: (error) => {
+          onError: (error: any) => {
             console.error("Raid error:", error);
             alert("Raid failed: " + error.message);
           },
@@ -79,55 +62,78 @@ export function RaidModal({ isOpen, onClose, bunkerId }: RaidModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-white">Raid Bunker</h2>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md animate-fadeInScale">
+      <div className="relative bg-gradient-to-br from-[#2a3447] via-[#1f2937] to-[#1a1f2e] border-[3px] border-[#4deeac] rounded-2xl p-8 max-w-lg w-full shadow-[0_0_50px_rgba(77,238,172,0.7),0_20px_80px_rgba(0,0,0,0.8)] transform transition-all duration-300">
+        {/* Accents */}
+        <div className="absolute top-0 left-0 w-20 h-20 border-t-4 border-l-4 border-[#5fffc0] rounded-tl-2xl" />
+        <div className="absolute bottom-0 right-0 w-20 h-20 border-b-4 border-r-4 border-[#5fffc0] rounded-br-2xl" />
+
+        {/* Glow */}
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-[#4deeac]/5 to-transparent animate-shimmer" />
+
+        <div className="relative flex justify-between items-center mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-3 h-3 bg-[#4deeac] rounded-full animate-pulse shadow-[0_0_10px_rgba(77,238,172,0.8)]" />
+            <h2 className="text-3xl font-bold text-[#4deeac] uppercase tracking-wider drop-shadow-[0_0_10px_rgba(77,238,172,0.6)]">Raid Bunker</h2>
+          </div>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white text-2xl"
+            className="text-[#4deeac] hover:text-[#5fffc0] text-4xl font-bold transition-all duration-200 hover:rotate-90 hover:scale-110"
           >
             ×
           </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="relative space-y-5">
           <div>
-            <label className="block text-white mb-2">Target Bunker ID</label>
+            <label className="block text-[#4deeac] font-bold mb-2 uppercase text-sm tracking-wider">Raid History ID</label>
+            <input
+              type="text"
+              value={raidHistoryId}
+              onChange={(e) => setRaidHistoryId(e.target.value)}
+              placeholder="0x... (contracts::raid::RaidHistory)"
+              className="w-full px-5 py-3 bg-[#1a1f2e] text-white border-2 border-[#4deeac] rounded-xl focus:outline-none focus:border-[#5fffc0] focus:shadow-[0_0_20px_rgba(77,238,172,0.5)] transition-all duration-200"
+            />
+          </div>
+          <div>
+            <label className="block text-[#4deeac] font-bold mb-2 uppercase text-sm tracking-wider">Target Bunker ID</label>
             <input
               type="text"
               value={targetBunkerId}
               onChange={(e) => setTargetBunkerId(e.target.value)}
               placeholder="0x..."
-              className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg"
+              className="w-full px-5 py-3 bg-[#1a1f2e] text-white border-2 border-[#4deeac] rounded-xl focus:outline-none focus:border-[#5fffc0] focus:shadow-[0_0_20px_rgba(77,238,172,0.5)] transition-all duration-200"
             />
           </div>
 
           <div>
-            <label className="block text-white mb-2">NPC Count</label>
+            <label className="block text-[#4deeac] font-bold mb-2 uppercase text-sm tracking-wider">NPC Count</label>
             <input
               type="number"
-              min="1"
+              min={1}
               value={npcCount}
               onChange={(e) => setNpcCount(parseInt(e.target.value) || 1)}
-              className="w-full px-4 py-2 bg-gray-700 text-white rounded-lg"
+              className="w-full px-5 py-3 bg-[#1a1f2e] text-white border-2 border-[#4deeac] rounded-xl focus:outline-none focus:border-[#5fffc0] focus:shadow-[0_0_20px_rgba(77,238,172,0.5)] transition-all duration-200"
             />
           </div>
 
-          <div className="bg-yellow-900/30 border border-yellow-600 rounded-lg p-3 text-yellow-200 text-sm">
-            <strong>Cost:</strong> 50 Scrap + 0.1 SUI
-            <br />
-            <strong>Cooldown:</strong> 24 hours per target
-            <br />
-            <strong>Daily Limit:</strong> 3 raids per day
+          <div className="bg-gradient-to-br from-[#1a1f2e] to-[#0d1117] border-2 border-[#ffc107] rounded-xl p-4 shadow-[0_0_15px_rgba(255,193,7,0.3)]">
+            <div className="text-[#ffc107] font-bold mb-2 uppercase tracking-wider flex items-center gap-2">
+              <span>⚠️</span> Raid Rules
+            </div>
+            <div className="text-white text-sm space-y-1">
+              <div><strong className="text-[#4deeac]">Cost:</strong> 50 Scrap + 0.1 SUI</div>
+              <div><strong className="text-[#4deeac]">Cooldown:</strong> 24 hours per target</div>
+              <div><strong className="text-[#4deeac]">Daily Limit:</strong> 3 raids per day</div>
+            </div>
           </div>
 
           <button
             onClick={handleRaid}
             disabled={loading || !targetBunkerId}
-            className="w-full px-4 py-3 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
+            className="w-full px-6 py-4 bg-gradient-to-r from-[#ff6b35] to-[#ffc107] hover:from-[#ffc107] hover:to-[#ff6b35] disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-[#0d1117] rounded-xl font-bold uppercase tracking-wider transition-all duration-300 shadow-[0_0_25px_rgba(255,107,53,0.5)] hover:shadow-[0_0_35px_rgba(255,193,7,0.6)] hover:scale-105 disabled:shadow-none transform"
           >
-            {loading ? "Raid in progress..." : "Start Raid"}
+            {loading ? "Raid in progress..." : "🚨 Start Raid"}
           </button>
         </div>
       </div>

@@ -100,13 +100,19 @@ export const IMAGES = {
     "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafkreignsm4ch7yqafallxkmwqb536q55wxum3ltjivep5z6cdpufs5dxy"
   ],
   room: [
-    "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafybeibrlzmyj6hiksjznwwqocdyuts2zy3tkmffidwlar3zfuhz46rk4q",
-    "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafybeihwxrzjpwjnfxo3isrxpbs2ht2vjqtth5alebzxczfpbgvky27uqy",
+    // Index aligned with ROOM_TYPES order
+    // 0: LIVING
     "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafybeiflwxho5gsswfag3zyy4p6wvvorzon5myf2fysvn3tihrekkmtmhi",
-    "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafybeie5zd5seceiclcfdzx5mgjnwwv2wvugm46pta2ttw5fn7vxg6de4u",
-    "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafybeih54bwaenucloqh27ygb3w2x5fkmd7nywp4myo6xyjinycu4poqq4",
+    // 1: GENERATOR (power)
+    "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafybeibrlzmyj6hiksjznwwqocdyuts2zy3tkmffidwlar3zfuhz46rk4q",
+    // 2: FARM
+    "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafybeihwxrzjpwjnfxo3isrxpbs2ht2vjqtth5alebzxczfpbgvky27uqy",
+    // 3: WATER_PUMP
     "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafybeiatxg247ucqjnxu43qi3qxff534jwifg6njv6i2lx4h3xrdidpe5u",
-    "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafybeid3wtdmehkcoqhmdud2pgsvwai3ubwgttti7egrkzjbuctibnfuma"
+    // 4: WORKSHOP
+    "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafybeid3wtdmehkcoqhmdud2pgsvwai3ubwgttti7egrkzjbuctibnfuma",
+    // 5: STORAGE
+    "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafybeie5zd5seceiclcfdzx5mgjnwwv2wvugm46pta2ttw5fn7vxg6de4u"
   ],
   background: "https://rose-absent-elk-883.mypinata.cloud/ipfs/bafkreibsiqwhc4uf72656ropvmqpapf4zws5ugteno5exdluajibu7od5m"
 };

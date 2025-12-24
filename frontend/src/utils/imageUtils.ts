@@ -36,6 +36,18 @@ export function getNPCSpriteUrl(rarity: number, profession: number): string {
   return IMAGES.npc[index];
 }
 
+// Get NPC sprite frame offset for idle animation
+// Idle frames: 0-3 (128px width each)
+export function getNPCIdleFrameOffset(frame: number): number {
+  return -(frame % 4) * 128;
+}
+
+// Get NPC sprite frame offset for walk animation
+// Walk frames: 4-7 (128px width each, offset by 512px)
+export function getNPCWalkFrameOffset(frame: number): number {
+  return -(512 + ((frame % 4) * 128));
+}
+
 // Get blueprint image
 export function getBlueprintImageUrl(): string {
   return IMAGES.blueprint[0];

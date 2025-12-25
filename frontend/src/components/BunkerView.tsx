@@ -54,9 +54,7 @@ export function BunkerView({ onBunkerLoaded, refreshTick }: BunkerViewProps) {
 
   useEffect(() => {
     loadBunkerData();
-    // Poll for updates every 5 seconds
-    const interval = setInterval(loadBunkerData, 5000);
-    return () => clearInterval(interval);
+    // Removed polling to improve performance
   }, [account]);
 
   // Listen for app-wide refresh events (e.g., expedition completion toast)
@@ -129,6 +127,18 @@ export function BunkerView({ onBunkerLoaded, refreshTick }: BunkerViewProps) {
 
       {/* Resources bar centered top */}
       <ResourcesBar bunker={bunker} />
+      
+      {/* Manual Refresh Button */}
+      <div className="absolute top-4 right-4 z-50">
+        <button 
+          onClick={() => loadBunkerData()}
+          disabled={loading}
+          className="p-2 bg-gray-800/80 hover:bg-gray-700 text-[#4deeac] border border-[#4deeac] rounded-lg transition-all shadow-[0_0_10px_rgba(77,238,172,0.3)] hover:shadow-[0_0_15px_rgba(77,238,172,0.5)] flex items-center gap-2"
+          title="Refresh Data"
+        >
+          <span className={`text-xl ${loading ? 'animate-spin' : ''}`}>↻</span>
+        </button>
+      </div>
 
       {/* Bunker grid - 3 rooms per row */}
       <div className="absolute top-28 left-0 right-0 bottom-0 px-8 pb-20 overflow-y-auto overflow-x-hidden flex justify-center">

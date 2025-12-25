@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from "react";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
-import { getOwnedObjects, getObjectType, getObject } from "../utils/sui";
+import { getOwnedObjects, getObjectType, getObject, suiClient } from "../utils/sui";
 import type { NPC } from "../types";
 import { NPC_STATUS, RARITY_NAMES } from "../constants";
 import { PACKAGE_ID } from "../constants";
@@ -162,12 +162,31 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
       signAndExecute(
         { transactionBlock: tx },
         {
-          onSuccess: (result: any) => {
+          onSuccess: async (result: any) => {
             // Expedition on-chain executes immediately, but UI now tracks a timer client-side.
             const endsAtMs = Date.now() + duration * 60 * 60 * 1000;
             const npcName = selected?.name ?? "NPC";
 
-            const events = (result as any)?.events;
+            // dapp-kit responses may omit events depending on options.
+            // If missing, fetch the transaction block with events from the fullnode.
+            let events: any[] | undefined = (result as any)?.events;
+            try {
+              if (!events || !Array.isArray(events)) {
+                const digest = (result as any)?.digest;
+                if (typeof digest === "string" && digest.length > 0) {
+                  const txb = await suiClient.getTransactionBlock({
+                    digest,
+                    options: {
+                      showEvents: true,
+                    },
+                  });
+                  events = (txb as any)?.events;
+                }
+              }
+            } catch (e) {
+              console.warn("Failed to fetch tx events for expedition:", e);
+            }
+
             const summary = parseExpeditionEvents(events);
 
             upsertTrackedExpedition(account.address, {

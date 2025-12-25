@@ -59,6 +59,22 @@ export function BunkerView({ onBunkerLoaded, refreshTick }: BunkerViewProps) {
     return () => clearInterval(interval);
   }, [account]);
 
+  // Listen for app-wide refresh events (e.g., expedition completion toast)
+  useEffect(() => {
+    if (!account?.address) return;
+
+    const onBunkerUpdated = () => {
+      loadBunkerData();
+    };
+
+    window.addEventListener("bunker-updated", onBunkerUpdated);
+    window.addEventListener("npcs-updated", onBunkerUpdated);
+    return () => {
+      window.removeEventListener("bunker-updated", onBunkerUpdated);
+      window.removeEventListener("npcs-updated", onBunkerUpdated);
+    };
+  }, [account]);
+
   // Trigger refresh when parent signals
   useEffect(() => {
     if (refreshTick !== undefined) {

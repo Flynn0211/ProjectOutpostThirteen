@@ -1,7 +1,7 @@
 // NOTE: These can be overridden in dev/prod via Vite env vars:
 // - VITE_PACKAGE_ID=0x...
 // - VITE_NETWORK=testnet|mainnet
-const DEFAULT_PACKAGE_ID = "0x8db687a9af4ab7fbc6edd372f0eb54e1d9c8ccf957ca2f30723cd71e762e22d1";
+const DEFAULT_PACKAGE_ID = "0x810c6ad98b1ac27d23b21565ab926650e247567068cc749df09a3ea54bdd43c3";
 const DEFAULT_NETWORK = "testnet" as const;
 
 export const PACKAGE_ID = (import.meta.env.VITE_PACKAGE_ID as string | undefined) ?? DEFAULT_PACKAGE_ID;

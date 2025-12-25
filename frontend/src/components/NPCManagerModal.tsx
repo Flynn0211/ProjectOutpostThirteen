@@ -326,7 +326,9 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
                   </div>
                   
                   <div className="text-white space-y-2">
-                    <div className="text-xl font-bold">{selectedNpc.name}</div>
+                    <div className="flex justify-between items-center">
+                       <div className="text-xl font-bold">{selectedNpc.name}</div>
+                    </div>
                     
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <div>
@@ -409,6 +411,8 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
                         </div>
                       </div>
                     </div>
+
+
 
 
 

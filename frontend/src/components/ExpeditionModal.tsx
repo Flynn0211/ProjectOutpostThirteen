@@ -10,6 +10,7 @@ import {
   isNpcOnExpedition,
   loadTrackedExpeditions,
   upsertTrackedExpedition,
+  clearAllExpeditions,
   type ExpeditionResultSummary,
 } from "../utils/expeditionTracker";
 
@@ -250,6 +251,23 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
               </div>
               <div className="text-xs text-white/70">{trackedActive.length} active</div>
             </div>
+
+            {trackedActive.length > 0 && (
+              <div className="flex justify-end mt-2">
+                <button
+                   onClick={() => {
+                     if (account?.address) {
+                        clearAllExpeditions(account.address);
+                        setNowMs(Date.now()); // Trigger re-render
+                        alert("Forced all expeditions to finish immediately (Dev Mode).");
+                     }
+                   }}
+                   className="text-[10px] text-red-400 hover:text-red-300 underline"
+                >
+                  [DEV] Instant Finish All
+                </button>
+              </div>
+            )}
 
             {trackedActive.length === 0 ? (
               <div className="text-white/60 text-sm mt-3">No NPCs on expedition.</div>

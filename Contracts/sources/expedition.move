@@ -144,18 +144,15 @@ module contracts::expedition {
             utils::emit_blueprint_dropped_event(bp_id, sender, bp_type, bp_rarity, clock);
         };
         
-        // Có cơ hội cao nhận item - Loop theo duration để nhận nhiều item hơn
+        // Deterministic Drops: Critical Success = 1 item per hour (Max loot)
+        let num_items = duration;
+        
         let mut i = 0;
         let mut items_gained = 0;
-        
-        while (i < duration) {
-            let item_roll = utils::random_in_range(0, 100, clock, ctx);
-            // Critical success có cơ hội cao hơn (+30%)
-            if (item_roll < item_chance + 30) {
-                 contracts::item::create_random_item(clock, ctx);
-                 items_gained = items_gained + 1;
-            };
-            i = i + 1;
+        while (i < num_items) {
+             contracts::item::create_random_item(clock, ctx);
+             items_gained = items_gained + 1;
+             i = i + 1;
         };
         
         // Emit result event
@@ -213,16 +210,15 @@ module contracts::expedition {
             utils::emit_blueprint_dropped_event(bp_id, sender, bp_type, bp_rarity, clock);
         };
         
-        // Có cơ hội nhận item - Loop theo duration
+        // Deterministic Drops: Regular Success = 1 item per 2 hours (approx)
+        // Formula: (duration + 1) / 2 -> 1h=1, 12h=6, 24h=12
+        let num_items = (duration + 1) / 2;
+        
         let mut i = 0;
         let mut items_gained = 0;
-        
-        while (i < duration) {
-             let item_roll = utils::random_in_range(0, 100, clock, ctx);
-             if (item_roll < item_chance) {
-                 contracts::item::create_random_item(clock, ctx); // Creates and transfers to sender
-                 items_gained = items_gained + 1;
-             };
+        while (i < num_items) {
+             contracts::item::create_random_item(clock, ctx);
+             items_gained = items_gained + 1;
              i = i + 1;
         };
         
@@ -359,24 +355,21 @@ module contracts::expedition {
     
     /// Tính success rate dựa trên stats NPC, profession, equipped items, duration
     fun calculate_success_rate(npc: &NPC, duration: u64): (u64, u64) {
-        // Base success rate từ combat power
+        // ... (Base success rate logic unchanged)
         let combat_power = npc::get_combat_power(npc);
-        let mut success_rate = 50; // Base 50%
+        let mut success_rate = 50; 
         
-        // Bonus từ combat power (mỗi 100 power = +5%)
         success_rate = success_rate + (combat_power / 100) * 5;
         
-        // Penalty từ duration dài (mỗi giờ thêm = -2%)
         if (duration > 1) {
             let penalty = (duration - 1) * 2;
             if (success_rate > penalty) {
                 success_rate = success_rate - penalty;
             } else {
-                success_rate = 20; // Minimum 20%
+                success_rate = 20; 
             };
         };
         
-        // Bonus từ profession
         let profession = npc::get_profession(npc);
         if (profession == utils::profession_scavenger()) {
             success_rate = success_rate + SCAVENGER_SUCCESS_BONUS;
@@ -386,33 +379,17 @@ module contracts::expedition {
             success_rate = success_rate + 5;
         };
         
-        // Bonuses từ equipped items - TÁCH RIÊNG THEO TYPE
-        let (bonus_hp, bonus_atk, bonus_def, bonus_luck) = npc::get_equipped_bonus(npc);
-        
-        // WEAPON (attack bonus) → tăng success rate trực tiếp
-        let weapon_bonus = bonus_atk / 5; // Mỗi 5 attack = +1% success
+        let (_, bonus_atk, _, _) = npc::get_equipped_bonus(npc);
+        let weapon_bonus = bonus_atk / 5; 
         success_rate = success_rate + weapon_bonus;
         
-        // ARMOR/HP (defense/hp bonus) → giảm knock chance (được xử lý ở calculate_damage)
-        // Không ảnh hưởng trực tiếp đến success rate
-        
-        // TOOLS (luck bonus) → tăng item chance
-        // Được xử lý riêng ở item_chance calculation
-        
-        // Cap success rate
         if (success_rate > 90) {
-            success_rate = 90; // Max 90%
+            success_rate = 90; 
         };
         
-        // Item chance calculation
-        // Base: level-based + luck bonus từ tools/equipment
-        let mut item_chance = 30 + (npc::get_level(npc) * 2);
-        let luck_bonus = bonus_luck / 3; // Mỗi 3 luck = +1% item chance
-        item_chance = item_chance + luck_bonus;
-        
-        if (item_chance > 70) {
-            item_chance = 70;
-        };
+        // Item Chance không còn được dùng để tính xác suất drop nữa (vì drop là deterministic)
+        // Tuy nhiên vẫn giữ function signature cũ để tránh breaking changes
+        let item_chance = 0; 
         
         (success_rate, item_chance)
     }

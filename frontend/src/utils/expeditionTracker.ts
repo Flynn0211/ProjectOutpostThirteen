@@ -60,6 +60,10 @@ export function removeTrackedExpedition(ownerAddress: string, npcId: string) {
   saveTrackedExpeditions(ownerAddress, list);
 }
 
+export function clearAllExpeditions(ownerAddress: string) {
+  localStorage.removeItem(storageKey(ownerAddress));
+}
+
 export function isNpcOnExpedition(ownerAddress: string, npcId: string, nowMs: number = Date.now()): boolean {
   return loadTrackedExpeditions(ownerAddress).some((e) => e.npcId === npcId && e.endsAtMs > nowMs);
 }

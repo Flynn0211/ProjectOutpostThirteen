@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { InventoryModal } from "./InventoryModal";
 import { RaidModal } from "./RaidModal";
 import { MarketplaceModal } from "./MarketplaceModal";
@@ -5,6 +6,7 @@ import { ExpeditionModal } from "./ExpeditionModal";
 import { RecruitNPCModal } from "./RecruitNPCModal";
 import { NPCManagerModal } from "./NPCManagerModal";
 import { UpgradeModal } from "./UpgradeModal";
+import { useGameStore } from "../state/gameStore";
 
 type ToolbarTab = "inventory" | "raid" | "market" | "expedition" | "recruit" | "npc-manager" | "logs" | "upgrade" | null;
 
@@ -16,9 +18,40 @@ interface ToolbarProps {
 }
 
 export function Toolbar({ activeTab, onTabChange, bunkerId, onRefresh }: ToolbarProps) {
+  const devCheatsUnlocked = useGameStore((s) => s.devCheatsUnlocked);
+  const unlockDevCheats = useGameStore((s) => s.unlockDevCheats);
+
+  const controlPanelClickCountRef = useRef(0);
+  const controlPanelResetTimerRef = useRef<number | null>(null);
+
   const baseButton = "px-6 py-3 rounded-xl text-sm font-bold transition-all duration-300 border-2 uppercase tracking-wider relative overflow-hidden group";
   const inactive = "bg-gradient-to-br from-[#2a3447] to-[#1a1f2e] text-[#4deeac] border-[#4deeac] hover:border-[#5fffc0] hover:shadow-[0_0_20px_rgba(77,238,172,0.5)] hover:scale-105 hover:-translate-y-0.5";
   const active = "bg-gradient-to-br from-[#4deeac] to-[#3dd69a] text-[#0d1117] border-[#5fffc0] shadow-[0_0_25px_rgba(77,238,172,0.8),0_0_50px_rgba(77,238,172,0.4)] scale-105";
+
+  const onControlPanelClick = () => {
+    if (devCheatsUnlocked) return;
+
+    controlPanelClickCountRef.current += 1;
+
+    if (controlPanelResetTimerRef.current) {
+      window.clearTimeout(controlPanelResetTimerRef.current);
+    }
+
+    // Require 10 taps within a short window to avoid accidental unlock.
+    controlPanelResetTimerRef.current = window.setTimeout(() => {
+      controlPanelClickCountRef.current = 0;
+      controlPanelResetTimerRef.current = null;
+    }, 2000);
+
+    if (controlPanelClickCountRef.current >= 10) {
+      controlPanelClickCountRef.current = 0;
+      if (controlPanelResetTimerRef.current) {
+        window.clearTimeout(controlPanelResetTimerRef.current);
+        controlPanelResetTimerRef.current = null;
+      }
+      unlockDevCheats();
+    }
+  };
 
   return (
     <>
@@ -30,7 +63,13 @@ export function Toolbar({ activeTab, onTabChange, bunkerId, onRefresh }: Toolbar
           <div className="relative flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="w-2 h-2 bg-[#4deeac] rounded-full animate-pulse shadow-[0_0_10px_rgba(77,238,172,0.8)]" />
-              <div className="text-sm uppercase tracking-[0.3em] text-[#4deeac] font-bold drop-shadow-[0_0_8px_rgba(77,238,172,0.6)]">Control Panel</div>
+              <div
+                onClick={onControlPanelClick}
+                className="text-sm uppercase tracking-[0.3em] text-[#4deeac] font-bold drop-shadow-[0_0_8px_rgba(77,238,172,0.6)] select-none cursor-pointer"
+                title={devCheatsUnlocked ? "" : ""}
+              >
+                Control Panel
+              </div>
             </div>
             <div className="flex flex-wrap gap-2.5">
               <button

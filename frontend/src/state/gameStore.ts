@@ -1,15 +1,38 @@
 import { create } from "zustand";
 
+const DEV_CHEATS_KEY = "outpost.devCheatsUnlocked";
+
+const readDevCheatsUnlocked = () => {
+  try {
+    return typeof window !== "undefined" && window.localStorage.getItem(DEV_CHEATS_KEY) === "1";
+  } catch {
+    return false;
+  }
+};
+
+const persistDevCheatsUnlocked = (value: boolean) => {
+  try {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(DEV_CHEATS_KEY, value ? "1" : "0");
+  } catch {
+    // ignore storage failures
+  }
+};
+
 type GameState = {
   flashingRooms: Record<number, number>; // roomIndex -> timestamp
   flashRoom: (roomIndex: number) => void;
   clearRoomFlash: (roomIndex: number) => void;
+
+  devCheatsUnlocked: boolean;
+  unlockDevCheats: () => void;
 };
 
 const FLASH_MS = 700;
 
 export const useGameStore = create<GameState>((set, get) => ({
   flashingRooms: {},
+  devCheatsUnlocked: readDevCheatsUnlocked(),
   flashRoom: (roomIndex) => {
     const now = Date.now();
     set((s) => ({
@@ -34,5 +57,10 @@ export const useGameStore = create<GameState>((set, get) => ({
       delete next[roomIndex];
       return { flashingRooms: next };
     });
+  },
+
+  unlockDevCheats: () => {
+    persistDevCheatsUnlocked(true);
+    set({ devCheatsUnlocked: true });
   },
 }));

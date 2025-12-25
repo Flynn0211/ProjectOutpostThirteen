@@ -146,13 +146,15 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
       const clockArg = tx.object("0x6");
 
       const target =
-        item.item_type === ITEM_TYPES.FOOD
-          ? `${PACKAGE_ID}::npc::consume_food`
-          : item.item_type === ITEM_TYPES.WATER
-            ? `${PACKAGE_ID}::npc::consume_water_item`
-            : item.item_type === ITEM_TYPES.MEDICINE
-              ? `${PACKAGE_ID}::npc::consume_medicine`
-              : `${PACKAGE_ID}::npc::revive_npc`;
+        (
+          item.item_type === ITEM_TYPES.FOOD
+            ? `${PACKAGE_ID}::npc::consume_food`
+            : item.item_type === ITEM_TYPES.WATER
+              ? `${PACKAGE_ID}::npc::consume_water_item`
+              : item.item_type === ITEM_TYPES.MEDICINE
+                ? `${PACKAGE_ID}::npc::consume_medicine`
+                : `${PACKAGE_ID}::npc::revive_npc`
+        ) as `${string}::${string}::${string}`;
 
       tx.moveCall({
         target,

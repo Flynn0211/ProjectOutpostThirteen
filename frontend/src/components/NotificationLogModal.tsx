@@ -1,7 +1,7 @@
 
 import { useEffect, useState } from "react";
 import { useCurrentAccount, useSuiClient } from "@mysten/dapp-kit";
-import { PACKAGE_ID } from "../constants";
+
 
 type ExpeditionLog = {
   npcId: string;

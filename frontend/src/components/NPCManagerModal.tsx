@@ -2,10 +2,10 @@ import { useState, useEffect } from "react";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
 import { getOwnedObjects, getObjectType } from "../utils/sui";
-import type { Item, NPC } from "../types";
+import type { Item, NPC, Bunker } from "../types";
 import { getNPCSpriteUrl } from "../utils/imageUtils";
 import { SpriteSheet } from "./SpriteSheet";
-import { ITEM_TYPES, NPC_STATUS, PACKAGE_ID, RARITY_NAMES } from "../constants";
+import { ITEM_TYPES, NPC_STATUS, PACKAGE_ID, RARITY_NAMES, NPC_PROFESSION_NAMES } from "../constants";
 
 interface NPCManagerModalProps {
   isOpen: boolean;
@@ -25,6 +25,7 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
   const [npcs, setNpcs] = useState<NPC[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedNpc, setSelectedNpc] = useState<NPC | null>(null);
+  const [bunker, setBunker] = useState<Bunker | null>(null);
 
   const [items, setItems] = useState<Item[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
@@ -33,15 +34,21 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
   useEffect(() => {
     if (!isOpen || !account?.address) return;
 
-    async function loadNPCs() {
+    async function loadData() {
       setLoading(true);
       try {
-        const npcObjects = await getOwnedObjects(
-          account!.address,
-          getObjectType("npc", "NPC")
-        );
+        const [npcObjects, bunkerObjects] = await Promise.all([
+          getOwnedObjects(account!.address, getObjectType("npc", "NPC")),
+          getOwnedObjects(account!.address, getObjectType("bunker", "Bunker")),
+        ]);
+        
         const cleaned = (npcObjects as NPC[]).filter((n) => !!n && !!(n as any).id);
         setNpcs(cleaned);
+        
+        if (bunkerObjects.length > 0) {
+          setBunker(bunkerObjects[0] as Bunker);
+        }
+
         setSelectedNpc((prev) => {
           if (prev?.id) {
             const stillThere = cleaned.find((n) => n.id === prev.id);
@@ -50,7 +57,7 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
           return cleaned.length > 0 ? cleaned[0] : null;
         });
       } catch (error) {
-        console.error("Error loading NPCs:", error);
+        console.error("Error loading data:", error);
       } finally {
         setLoading(false);
       }
@@ -71,7 +78,7 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
       }
     }
 
-    loadNPCs();
+    loadData();
     loadItems();
   }, [isOpen, account]);
 
@@ -104,6 +111,75 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
     if (rarity === 3) return "Epic";
     if (rarity === 4) return "Legendary";
     return (RARITY_NAMES as any)[rarity] ?? String(rarity);
+  };
+
+  const handleBunkerAction = async (action: "feed" | "water") => {
+    if (!account?.address || !selectedNpc?.id || !bunker?.id) return;
+
+    setActionLoadingItemId("bunker-action");
+    try {
+      const tx = new TransactionBlock();
+      const npcArg = tx.object(selectedNpc.id);
+      const bunkerArg = tx.object(bunker.id);
+      
+      if (action === "feed") {
+        tx.moveCall({
+          target: `${PACKAGE_ID}::npc::feed_npc_from_bunker`,
+          arguments: [npcArg, bunkerArg, tx.pure(20, "u64")],
+        });
+      } else {
+         tx.moveCall({
+          target: `${PACKAGE_ID}::npc::give_water_from_bunker`,
+          arguments: [npcArg, bunkerArg, tx.pure(20, "u64")],
+        });
+      }
+
+      signAndExecute(
+        { transactionBlock: tx },
+        {
+          onSuccess: () => {
+             // Dispatch events to update Bunker Header and NPC list
+             window.dispatchEvent(new Event("bunker-updated"));
+             window.dispatchEvent(new Event("npcs-updated"));
+
+             setTimeout(async () => {
+                // Determine which objects to reload based on what we have getters for or just reload all
+                // For simplicity, we re-trigger the useEffect load flow by toggling a refresh or just calling loadData if we extracted it.
+                // But since we are inside the component, let's just re-fetch what we need.
+                if (!account?.address) return;
+
+                try {
+                  const [npcObjects, bunkerObjects] = await Promise.all([
+                    getOwnedObjects(account.address, getObjectType("npc", "NPC")),
+                    getOwnedObjects(account.address, getObjectType("bunker", "Bunker")),
+                  ]);
+                  
+                  const cleaned = (npcObjects as NPC[]).filter((n) => !!n && !!(n as any).id);
+                  setNpcs(cleaned);
+                  if (bunkerObjects.length > 0) setBunker(bunkerObjects[0] as Bunker);
+                  
+                  setSelectedNpc((prev) => {
+                     if (prev?.id) return cleaned.find((n) => n.id === prev.id) || null;
+                     return null;
+                  });
+                } catch (e) {
+                  console.error("Refetch error", e);
+                } finally {
+                  setActionLoadingItemId(null);
+                }
+             }, 1000);
+          },
+          onError: (err) => {
+            console.error(err);
+            alert("Action failed");
+            setActionLoadingItemId(null);
+          }
+        }
+      );
+    } catch (e) {
+      console.error(e);
+      setActionLoadingItemId(null);
+    }
   };
 
   const handleUseConsumable = async (item: Item) => {
@@ -260,8 +336,14 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
                         </span>
                       </div>
                       <div>
+                        <span className="text-gray-400">Type:</span>
+                        <span className="ml-2 font-bold">Survivor</span>
+                      </div>
+                      <div>
                         <span className="text-gray-400">Profession:</span>
-                        <span className="ml-2 font-bold">{selectedNpc.profession}</span>
+                        <span className="ml-2 font-bold">
+                          {NPC_PROFESSION_NAMES[selectedNpc.profession as keyof typeof NPC_PROFESSION_NAMES] || selectedNpc.profession}
+                        </span>
                       </div>
                     </div>
 
@@ -316,6 +398,34 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
                           />
                         </div>
                       </div>
+                    </div>
+
+
+
+                    <div className="border-t border-gray-600 pt-3">
+                      <div className="text-sm font-bold text-gray-300 mb-2">Bunker Rationing</div>
+                      {bunker ? (
+                         <div className="grid grid-cols-2 gap-3">
+                            <button
+                              disabled={!!actionLoadingItemId || selectedNpc.hunger >= 100 || bunker.food < 20}
+                              onClick={() => handleBunkerAction("feed")}
+                              className="bg-orange-600/20 hover:bg-orange-600/40 disabled:opacity-50 border border-orange-500/50 rounded p-2 flex flex-col items-center gap-1 transition-all"
+                            >
+                               <span className="text-orange-400 font-bold text-xs">FEED (20)</span>
+                               <span className="text-[10px] text-gray-400">Costs 20 Food</span>
+                            </button>
+                            <button
+                              disabled={!!actionLoadingItemId || selectedNpc.thirst >= 100 || bunker.water < 20}
+                              onClick={() => handleBunkerAction("water")}
+                              className="bg-blue-600/20 hover:bg-blue-600/40 disabled:opacity-50 border border-blue-500/50 rounded p-2 flex flex-col items-center gap-1 transition-all"
+                            >
+                               <span className="text-blue-400 font-bold text-xs">DRINK (20)</span>
+                               <span className="text-[10px] text-gray-400">Costs 20 Water</span>
+                            </button>
+                         </div>
+                      ) : (
+                        <div className="text-xs text-gray-400">Data unavailable</div>
+                      )}
                     </div>
 
                     <div className="border-t border-gray-600 pt-3">

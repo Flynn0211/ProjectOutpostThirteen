@@ -144,13 +144,18 @@ module contracts::expedition {
             utils::emit_blueprint_dropped_event(bp_id, sender, bp_type, bp_rarity, clock);
         };
         
-        // Có cơ hội cao nhận item
-        let item_roll = utils::random_in_range(0, 100, clock, ctx);
-        let items_gained = if (item_roll < item_chance + 30) { 1 } else { 0 };
+        // Có cơ hội cao nhận item - Loop theo duration để nhận nhiều item hơn
+        let mut i = 0;
+        let mut items_gained = 0;
         
-        if (items_gained > 0) {
-            // Tạo item và gửi cho owner (simplified - trong thực tế sẽ call item::create_item)
-            // Để đơn giản, chỉ track số lượng trong event
+        while (i < duration) {
+            let item_roll = utils::random_in_range(0, 100, clock, ctx);
+            // Critical success có cơ hội cao hơn (+30%)
+            if (item_roll < item_chance + 30) {
+                 contracts::item::create_random_item(clock, ctx);
+                 items_gained = items_gained + 1;
+            };
+            i = i + 1;
         };
         
         // Emit result event
@@ -208,9 +213,18 @@ module contracts::expedition {
             utils::emit_blueprint_dropped_event(bp_id, sender, bp_type, bp_rarity, clock);
         };
         
-        // Có cơ hội nhận item
-        let item_roll = utils::random_in_range(0, 100, clock, ctx);
-        let items_gained = if (item_roll < item_chance) { 1 } else { 0 };
+        // Có cơ hội nhận item - Loop theo duration
+        let mut i = 0;
+        let mut items_gained = 0;
+        
+        while (i < duration) {
+             let item_roll = utils::random_in_range(0, 100, clock, ctx);
+             if (item_roll < item_chance) {
+                 contracts::item::create_random_item(clock, ctx); // Creates and transfers to sender
+                 items_gained = items_gained + 1;
+             };
+             i = i + 1;
+        };
         
         // Emit result event
         let food = resources / 2;

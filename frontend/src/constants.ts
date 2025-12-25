@@ -1,5 +1,5 @@
 // Contract constants
-export const PACKAGE_ID = "0xe6c8ec0758f4e751804b3f16b1c2ab353783975039bc0daf87b80adddae36e04";
+export const PACKAGE_ID = "0x73dd6222fa4a21c3ee025117fb3e682b6ca529d68201f12918d9e6be17285844";
 export const NETWORK = "testnet" as const;
 
 // Image URLs
@@ -143,6 +143,14 @@ export const NPC_STATUS = {
   KNOCKED: 2,
   WORKING: 3,
 } as const;
+
+export const NPC_PROFESSION_NAMES = {
+  0: "Scavenger",
+  1: "Farmer",
+  2: "Butcher",
+  3: "Soldier",
+  4: "Doctor",
+};
 
 // Item types
 export const ITEM_TYPES = {

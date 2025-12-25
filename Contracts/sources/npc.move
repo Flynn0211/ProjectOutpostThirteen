@@ -188,6 +188,7 @@ module contracts::npc {
      */
     public entry fun recruit_npc(
         payment: Coin<SUI>,
+        name: vector<u8>,
         clock: &Clock,
         ctx: &mut TxContext
     ) {
@@ -233,7 +234,7 @@ module contracts::npc {
             skill_points: 0,              // Phase 3: Start with 0 points
             respec_count: 0,              // Phase 3: Haven't respec'd yet
             owner: sender,
-            name: string::utf8(b"Survivor"), // Tên mặc định, có thể đổi sau
+            name: string::utf8(name),    // Tên từ tham số
             status: STATUS_IDLE,         // Bắt đầu ở trạng thái IDLE
             knocked_at: 0,                // Chưa bị knocked
             inventory_count: 0,           // Inventory trống
@@ -777,6 +778,13 @@ module contracts::npc {
         
         bunker::consume_food(bunker, amount);
         npc.hunger = if (npc.hunger + amount > 100) { 100 } else { npc.hunger + amount };
+        
+        // Bonus: Recover stamina
+        npc.current_stamina = if (npc.current_stamina + 10 > npc.max_stamina) {
+            npc.max_stamina
+        } else {
+            npc.current_stamina + 10
+        };
     }
     
     /// Phase 1: Give water using bunker resources
@@ -791,6 +799,13 @@ module contracts::npc {
         
         bunker::consume_water(bunker, amount);
         npc.thirst = if (npc.thirst + amount > 100) { 100 } else { npc.thirst + amount };
+        
+        // Bonus: Recover stamina
+        npc.current_stamina = if (npc.current_stamina + 10 > npc.max_stamina) {
+            npc.max_stamina
+        } else {
+            npc.current_stamina + 10
+        };
     }
     
     /// Update survival stats (passive decay) - Phase 1
@@ -1473,5 +1488,23 @@ module contracts::npc {
     /// Get all learned skills
     public fun get_learned_skills(npc: &NPC): vector<u8> {
         npc.skills
+    }
+
+    // ==================== DEV HELPERS (TESTNET ONLY) ====================
+    
+    /// Hồi phục full stats cho NPC để test nhanh
+    public entry fun dev_full_restore(
+        npc: &mut NPC, 
+        ctx: &mut TxContext
+    ) {
+        assert!(npc.owner == tx_context::sender(ctx), E_NOT_OWNER);
+        npc.current_hp = npc.max_hp;
+        npc.current_stamina = npc.max_stamina;
+        npc.hunger = 100;
+        npc.thirst = 100;
+        
+        // Clear lockout properties
+        npc.status = STATUS_IDLE;
+        npc.knocked_at = 0;
     }
 }

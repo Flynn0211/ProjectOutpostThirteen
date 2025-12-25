@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
 import { PACKAGE_ID, IMAGES } from "../constants";
 import { SpriteSheet } from "./SpriteSheet";
+import { generateRandomName } from "../utils/nameGenerator";
 
 interface RecruitNPCModalProps {
   isOpen: boolean;
@@ -15,6 +16,12 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (isOpen) {
+      setLoading(false);
+    }
+  }, [isOpen]);
+
   const sampleNPCs = IMAGES.npc.slice(0, 6);
 
   const handleRecruit = async () => {
@@ -24,10 +31,14 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
     try {
       const tx = new TransactionBlock();
       const [coin] = tx.splitCoins(tx.gas, [tx.pure(100_000_000)]); // 0.1 SUI
+      const randomName = generateRandomName();
+      console.log("Recruiting NPC with name:", randomName);
+
       tx.moveCall({
         target: `${PACKAGE_ID}::npc::recruit_npc`,
         arguments: [
           coin,
+          tx.pure(randomName, "string"), // Pass random name
           tx.object("0x6"), // Clock object
         ],
       });
@@ -38,6 +49,7 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
             console.log("NPC recruited successfully:", result);
             // Wait a moment for transaction to settle, then reload
             setTimeout(() => {
+              setLoading(false);
               onClose();
               if (onSuccess) onSuccess();
             }, 1500);

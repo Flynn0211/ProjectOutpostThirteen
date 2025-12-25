@@ -1,5 +1,5 @@
 // Contract constants
-export const PACKAGE_ID = "0x73dd6222fa4a21c3ee025117fb3e682b6ca529d68201f12918d9e6be17285844";
+export const PACKAGE_ID = "0x5a9c8ce23058fc63904b6129b0ef2a0544f1f5d21164b529a413f42b4250204d";
 export const NETWORK = "testnet" as const;
 
 // Image URLs

@@ -91,21 +91,21 @@ module contracts::item {
         clock: &Clock,
         ctx: &mut TxContext
     ) {
-        // Roll rarity (1-100)
+        // Roll rarity (1-100) - BUFFED RATES
         let roll = utils::random_in_range(1, 101, clock, ctx);
-        let rarity = if (roll <= 60) { RARITY_COMMON }
-                     else if (roll <= 85) { RARITY_RARE }
-                     else if (roll <= 97) { RARITY_EPIC }
-                     else { RARITY_LEGENDARY };
+        let rarity = if (roll <= 50) { RARITY_COMMON }       // 50%
+                     else if (roll <= 80) { RARITY_RARE }    // 30%
+                     else if (roll <= 95) { RARITY_EPIC }    // 15%
+                     else { RARITY_LEGENDARY };              // 5%
         
         
-        // Roll item type
-        // 1-3: Equipable (Weapon/Armor/Tool) - 50%
-        // 4-7: Consumable (Medicine/Revival Potion/Food/Water) - 40%
+        // Roll item type - UPDATED RATIOS (High Chance for Equipment)
+        // 1-3: Equipable (Weapon/Armor/Tool) - 70% (was 50%)
+        // 4-7: Consumable (Medicine/Revival Potion/Food/Water) - 20% (was 40%)
         // 99: Collectible - 10%
         
         let type_roll = utils::random_in_range(1, 100, clock, ctx);
-        let item_type = if (type_roll <= 50) {
+        let item_type = if (type_roll <= 70) {
             (utils::random_in_range(1, 3, clock, ctx) as u8)
         } else if (type_roll <= 90) {
             (utils::random_in_range(4, 7, clock, ctx) as u8)
@@ -115,6 +115,65 @@ module contracts::item {
         
         // Calculate stats dựa trên rarity
         let (hp, atk, def, luck) = calculate_item_stats(rarity, item_type, clock, ctx);
+        
+        // Generate name
+        let name = generate_item_name(item_type, rarity);
+        
+        // Phase 3: Calculate max durability
+        let max_dur = get_max_durability_for_rarity(rarity);
+        
+        let item = Item {
+            id: object::new(ctx),
+            name,
+            rarity,
+            item_type,
+            durability: max_dur,      // Start at full
+            max_durability: max_dur,
+            hp_bonus: hp,
+            attack_bonus: atk,
+            defense_bonus: def,
+            luck_bonus: luck,
+        };
+        
+        let sender = tx_context::sender(ctx);
+        
+        event::emit(ItemCreated {
+            item_id: object::id(&item),
+            name: item.name,
+            rarity: item.rarity,
+            item_type: item.item_type,
+            owner: sender,
+        });
+        
+        // Transfer to creator
+        transfer::public_transfer(item, sender);
+    }
+
+    /// Tạo item với seed (để dùng trong loop tránh trùng lặp)
+    public entry fun create_loot_item(
+        seed: u64,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        // Roll rarity (1-100) - USE SEED - BUFFED RATES
+        let roll = utils::random_in_range_with_seed(1, 101, seed, clock, ctx);
+        let rarity = if (roll <= 50) { RARITY_COMMON }       // 50%
+                     else if (roll <= 80) { RARITY_RARE }    // 30%
+                     else if (roll <= 95) { RARITY_EPIC }    // 15%
+                     else { RARITY_LEGENDARY };              // 5%
+        
+        // Roll item type - USE SEED + 1 - HIGH EQUIPMENT CHANCE (70%)
+        let type_roll = utils::random_in_range_with_seed(1, 100, seed + 1, clock, ctx);
+        let item_type = if (type_roll <= 70) {
+            (utils::random_in_range_with_seed(1, 3, seed + 2, clock, ctx) as u8)
+        } else if (type_roll <= 90) {
+            (utils::random_in_range_with_seed(4, 7, seed + 3, clock, ctx) as u8)
+        } else {
+            TYPE_COLLECTIBLE
+        };
+        
+        // Calculate stats dựa trên rarity
+        let (hp, atk, def, luck) = calculate_item_stats(rarity, item_type, clock, ctx); // Note: calculate_item_stats vẫn dùng RNG thường, nhưng không quan trọng lắm cho stats variance
         
         // Generate name
         let name = generate_item_name(item_type, rarity);

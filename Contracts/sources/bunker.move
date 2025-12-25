@@ -410,8 +410,16 @@ module contracts::bunker {
     }
     
     // Legacy function for backward compatibility (will be deprecated)
+    // Updated to split resources correctly: 50% Food, 25% Water, 25% Scrap
     public fun add_resources(bunker: &mut Bunker, amount: u64) {
-        bunker.scrap = bunker.scrap + amount;
+        let food_add = amount / 2;
+        let water_add = amount / 4;
+        let scrap_add = amount / 4;
+        
+        // Add to bunker
+        bunker.food = bunker.food + food_add;
+        bunker.water = bunker.water + water_add;
+        bunker.scrap = bunker.scrap + scrap_add;
     }
     
     public fun consume_resources(bunker: &mut Bunker, amount: u64) {

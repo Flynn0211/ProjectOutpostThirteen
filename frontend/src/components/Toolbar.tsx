@@ -5,7 +5,7 @@ import { ExpeditionModal } from "./ExpeditionModal";
 import { RecruitNPCModal } from "./RecruitNPCModal";
 import { NPCManagerModal } from "./NPCManagerModal";
 
-type ToolbarTab = "inventory" | "raid" | "market" | "expedition" | "recruit" | "npc-manager" | null;
+type ToolbarTab = "inventory" | "raid" | "market" | "expedition" | "recruit" | "npc-manager" | "logs" | null;
 
 interface ToolbarProps {
   activeTab: ToolbarTab;
@@ -67,6 +67,12 @@ export function Toolbar({ activeTab, onTabChange, bunkerId, onRefresh }: Toolbar
                 className={`${baseButton} ${activeTab === "npc-manager" ? active : inactive}`}
               >
                 <span className="relative z-10">⚙️ Manage NPCs</span>
+              </button>
+              <button
+                onClick={() => onTabChange(activeTab === "logs" ? null : "logs")}
+                className={`${baseButton} ${activeTab === "logs" ? active : inactive}`}
+              >
+                <span className="relative z-10">📜 Logs</span>
               </button>
             </div>
           </div>

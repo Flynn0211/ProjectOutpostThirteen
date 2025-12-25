@@ -5,6 +5,7 @@ import { WalletButton } from "./components/WalletButton";
 import { BunkerView } from "./components/BunkerView";
 import { Toolbar } from "./components/Toolbar";
 import { ToastHost } from "./components/ToastHost";
+import { NotificationLogModal } from "./components/NotificationLogModal";
 
 type ToolbarTab =
   | "inventory"
@@ -13,6 +14,7 @@ type ToolbarTab =
   | "expedition"
   | "recruit"
   | "npc-manager"
+  | "logs" // New tab
   | null;
 
 function App() {
@@ -64,6 +66,11 @@ function App() {
           setRefreshTick((t) => t + 1);
         }}
       />
+      
+      {activeTab === "logs" && (
+        <NotificationLogModal onClose={() => setActiveTab(null)} />
+      )}
+      
       <ToastHost />
       <div className="absolute top-4 right-4 z-50">
         <WalletButton />

@@ -149,8 +149,11 @@ module contracts::expedition {
         
         let mut i = 0;
         let mut items_gained = 0;
+        let mut i = 0;
+        let mut items_gained = 0;
         while (i < num_items) {
-             contracts::item::create_random_item(clock, ctx);
+             // Dùng create_loot_item với seed là i để tránh trùng lặp
+             contracts::item::create_loot_item(i, clock, ctx);
              items_gained = items_gained + 1;
              i = i + 1;
         };
@@ -216,8 +219,11 @@ module contracts::expedition {
         
         let mut i = 0;
         let mut items_gained = 0;
+        let mut i = 0;
+        let mut items_gained = 0;
         while (i < num_items) {
-             contracts::item::create_random_item(clock, ctx);
+             // Dùng create_loot_item với seed là i để tránh trùng lặp
+             contracts::item::create_loot_item(i, clock, ctx);
              items_gained = items_gained + 1;
              i = i + 1;
         };
@@ -272,6 +278,19 @@ module contracts::expedition {
             
             utils::emit_blueprint_dropped_event(bp_id, sender, bp_type, bp_rarity, clock);
         };
+
+        
+        // Update: Partial Success cũng nhận được chút ít item (khuyến khích)
+        // Formula: Duration / 3 (e.g., 24h -> 8 items, 1h -> 0 items)
+        let num_items = duration / 3;
+        
+        let mut i = 0;
+        let mut items_gained = 0;
+        while (i < num_items) {
+             contracts::item::create_loot_item(i + 100, clock, ctx); // Salt offset 100
+             items_gained = items_gained + 1;
+             i = i + 1;
+        };
         
         // Emit result event
         let food = resources / 2;
@@ -285,7 +304,7 @@ module contracts::expedition {
             food,
             water,
             scrap,
-            0,
+            items_gained,
             damage,
             clock
         );
@@ -357,16 +376,16 @@ module contracts::expedition {
     fun calculate_success_rate(npc: &NPC, duration: u64): (u64, u64) {
         // ... (Base success rate logic unchanged)
         let combat_power = npc::get_combat_power(npc);
-        let mut success_rate = 50; 
+        let mut success_rate = 80; // Base success rate increased to 80% as requested
         
         success_rate = success_rate + (combat_power / 100) * 5;
         
         if (duration > 1) {
-            let penalty = (duration - 1) * 2;
+            let penalty = (duration - 1) * 1; // Reduced penalty: only -1% per hour
             if (success_rate > penalty) {
                 success_rate = success_rate - penalty;
             } else {
-                success_rate = 20; 
+                success_rate = 30; // Min success rate increased to 30%
             };
         };
         
@@ -383,8 +402,8 @@ module contracts::expedition {
         let weapon_bonus = bonus_atk / 5; 
         success_rate = success_rate + weapon_bonus;
         
-        if (success_rate > 90) {
-            success_rate = 90; 
+        if (success_rate > 95) { // Cap increased to 95%
+            success_rate = 95; 
         };
         
         // Item Chance không còn được dùng để tính xác suất drop nữa (vì drop là deterministic)

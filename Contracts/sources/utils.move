@@ -335,6 +335,11 @@ module contracts::utils {
      * ```
      */
     public fun generate_random_u64(clock: &Clock, ctx: &mut TxContext): u64 {
+        generate_random_u64_with_seed(0, clock, ctx)
+    }
+
+    /// Helper mới: Random với seed tùy chỉnh (để dùng trong loop)
+    public fun generate_random_u64_with_seed(seed: u64, clock: &Clock, ctx: &mut TxContext): u64 {
         // Lấy 3 nguồn entropy
         let tx_digest = tx_context::digest(ctx);      // Unique cho mỗi TX (~32 bytes)
         let timestamp = clock::timestamp_ms(clock);   // Thời gian hiện tại (ms)
@@ -345,7 +350,7 @@ module contracts::utils {
         vector::append(&mut seed_data, *tx_digest);              // ~32 bytes
         vector::append(&mut seed_data, bcs::to_bytes(&timestamp)); // 8 bytes
         vector::append(&mut seed_data, bcs::to_bytes(&sender));    // 32 bytes
-        // Tổng: ~72 bytes seed data
+        vector::append(&mut seed_data, bcs::to_bytes(&seed));      // 8 bytes EXTRA ENTROPY
         
         // Hash để tạo số ngẫu nhiên (SHA3-256 = 32 bytes output)
         let hash_result = hash::sha3_256(seed_data);
@@ -376,13 +381,17 @@ module contracts::utils {
      * ```
      */
     public fun random_in_range(min: u64, max: u64, clock: &Clock, ctx: &mut TxContext): u64 {
+        random_in_range_with_seed(min, max, 0, clock, ctx)
+    }
+
+    public fun random_in_range_with_seed(min: u64, max: u64, seed: u64, clock: &Clock, ctx: &mut TxContext): u64 {
         assert!(max >= min, E_INVALID_RANGE);
         
         if (max == min) {
             return min
         };
         
-        let random = generate_random_u64(clock, ctx);
+        let random = generate_random_u64_with_seed(seed, clock, ctx);
         let range = max - min + 1;  // +1 vì bao gồm cả max
         min + (random % range)      // Modulo đưa về khoảng [0, range), rồi cộng min
     }

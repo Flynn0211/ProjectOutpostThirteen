@@ -4,6 +4,7 @@ import { ConnectWallet } from "./components/ConnectWallet";
 import { WalletButton } from "./components/WalletButton";
 import { BunkerView } from "./components/BunkerView";
 import { Toolbar } from "./components/Toolbar";
+import { ToastHost } from "./components/ToastHost";
 
 type ToolbarTab =
   | "inventory"
@@ -63,6 +64,7 @@ function App() {
           setRefreshTick((t) => t + 1);
         }}
       />
+      <ToastHost />
       <div className="absolute top-4 right-4 z-50">
         <WalletButton />
       </div>

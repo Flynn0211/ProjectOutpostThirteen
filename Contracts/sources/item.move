@@ -16,6 +16,7 @@ module contracts::item {
     const TYPE_MEDICINE: u8 = 4;
     const TYPE_REVIVAL_POTION: u8 = 5;
     const TYPE_FOOD: u8 = 6;
+    const TYPE_WATER: u8 = 7;
     const TYPE_COLLECTIBLE: u8 = 99;
     
     // Rarity levels
@@ -100,14 +101,14 @@ module contracts::item {
         
         // Roll item type
         // 1-3: Equipable (Weapon/Armor/Tool) - 50%
-        // 4-6: Consumable (Medicine/Revival Potion/Food) - 40%
+        // 4-7: Consumable (Medicine/Revival Potion/Food/Water) - 40%
         // 99: Collectible - 10%
         
         let type_roll = utils::random_in_range(1, 100, clock, ctx);
         let item_type = if (type_roll <= 50) {
             (utils::random_in_range(1, 3, clock, ctx) as u8)
         } else if (type_roll <= 90) {
-            (utils::random_in_range(4, 6, clock, ctx) as u8)
+            (utils::random_in_range(4, 7, clock, ctx) as u8)
         } else {
             TYPE_COLLECTIBLE
         };
@@ -356,6 +357,10 @@ module contracts::item {
         TYPE_FOOD
     }
 
+    public fun type_water(): u8 {
+        TYPE_WATER
+    }
+
     public fun type_collectible(): u8 {
         TYPE_COLLECTIBLE
     }
@@ -386,6 +391,8 @@ module contracts::item {
             (base * 3, 0, 0, 0)
         } else if (item_type == TYPE_FOOD) {
             (base, 0, 0, 0) // Food gives small HP bonus if equipped (or useless)
+        } else if (item_type == TYPE_WATER) {
+            (0, 0, 0, 0)
         } else { // TYPE_REVIVAL_POTION, TYPE_COLLECTIBLE
             (0, 0, 0, 0) // No passive stats
         };
@@ -412,6 +419,7 @@ module contracts::item {
                        else if (item_type == TYPE_MEDICINE) { string::utf8(b" Medicine") }
                        else if (item_type == TYPE_REVIVAL_POTION) { string::utf8(b" Revival Potion") }
                        else if (item_type == TYPE_FOOD) { string::utf8(b" Food") }
+                       else if (item_type == TYPE_WATER) { string::utf8(b" Water") }
                        else { string::utf8(b" Artifact") }; // Collectible
         
         string::append(&mut rarity_name, type_name);

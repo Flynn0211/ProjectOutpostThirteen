@@ -1,5 +1,5 @@
 // Contract constants
-export const PACKAGE_ID = "0x2b01dc0b75cec4560056eeb070e378a9cae3710a0fce77b3aed7928316799664";
+export const PACKAGE_ID = "0xe6c8ec0758f4e751804b3f16b1c2ab353783975039bc0daf87b80adddae36e04";
 export const NETWORK = "testnet" as const;
 
 // Image URLs
@@ -152,6 +152,7 @@ export const ITEM_TYPES = {
   MEDICINE: 4,
   REVIVAL_POTION: 5,
   FOOD: 6,
+  WATER: 7,
   COLLECTIBLE: 99,
 } as const;
 

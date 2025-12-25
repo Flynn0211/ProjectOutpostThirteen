@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { IMAGES } from "../constants";
-import { getItemImageUrl } from "../utils/imageUtils";
+import { SpriteSheet } from "./SpriteSheet";
 
 interface MarketplaceModalProps {
   isOpen: boolean;
@@ -114,13 +114,9 @@ export function MarketplaceModal({ isOpen, onClose }: MarketplaceModalProps) {
                 {IMAGES.npc.slice(0, 8).map((src, idx) => (
                   <div key={idx} className="bg-[#1a1f2e] border-2 border-[#4deeac] rounded-xl p-4 text-center hover:shadow-[0_0_15px_rgba(77,238,172,0.4)] transition-all">
                     <div className="w-full h-32 bg-[#0d1117] rounded mb-2 overflow-hidden">
-                      <div
-                        className="w-full h-32 bg-contain bg-no-repeat bg-left"
-                        style={{
-                          backgroundImage: `url(${src})`,
-                          backgroundPosition: "0px 0px", // Idle frame 0
-                        }}
-                      />
+                      <div className="w-full h-full flex items-center justify-center">
+                        <SpriteSheet src={src} frameWidth={128} frameHeight={128} fps={12} playing={true} />
+                      </div>
                     </div>
                     <div className="text-white text-sm font-bold">NPC #{idx + 1}</div>
                     <div className="text-xs text-[#4deeac]">Sample</div>

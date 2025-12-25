@@ -6,6 +6,14 @@
 
 **Version 4.0** - Full Roadmap Complete! 🚀
 
+## 🚢 Testnet Deploy Notes (Quan trọng)
+
+- Xem hướng dẫn chi tiết: [TESTNET_README.md](TESTNET_README.md)
+- Dự án hiện chạy **testnet-only**. Mỗi lần `sui move publish` sẽ ra **PACKAGE_ID mới** → cập nhật lại `frontend/src/constants.ts`.
+- **Breaking change dữ liệu on-chain**: struct `Room` đã thay đổi layout (thêm trường `production_remainder`) nên **Bunker objects cũ sẽ không tương thích** với package mới.
+  - Sau khi republish, hãy **tạo bunker mới** bằng flow UI/entry `bunker::create_bunker`.
+  - Nếu frontend đang load cả bunker cũ, bạn có thể gặp lỗi parse/hiển thị; nên tạo mới để test gameplay.
+
 ### Phase 4: PvP Raid System ⚔️ (NEW!)
 
 - ✅ **Bunker Raiding**: Tấn công bunker của người chơi khác để cướp tài nguyên
@@ -88,7 +96,7 @@ graph TD
     - Là một **Owned Object**.
     - **Phân loại rõ ràng**:
       - **Equippable** (Weapon, Armor, Tool): Gắn vào equipment slots, tăng chỉ số
-      - **Consumable** (Medicine, Food, Revival Potion): Dùng để hồi phục hoặc cứu sống NPC
+      - **Consumable** (Medicine, Food, Water, Revival Potion): Dùng để hồi phục hoặc cứu sống NPC
       - **Collectible** (Type 99): Rarity cao, **KHÔNG THỂ EQUIP**, dùng sưu tầm/trading
     - **Bonuses**:
       - **Weapon (Attack)** → +Success Rate (5 atk = +1%)

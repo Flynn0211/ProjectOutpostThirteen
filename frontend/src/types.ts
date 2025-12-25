@@ -24,6 +24,7 @@ export interface Room {
   production_rate: number;
   last_collected_at: number;
   accumulated: number;
+  production_remainder?: number;
 }
 
 export interface NPC {

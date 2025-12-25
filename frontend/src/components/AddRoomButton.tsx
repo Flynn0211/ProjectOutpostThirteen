@@ -15,6 +15,10 @@ export function AddRoomButton({ bunkerId, onSuccess }: AddRoomButtonProps) {
   const [loading, setLoading] = useState(false);
 
   const roomOptions = [
+    { type: ROOM_TYPES.LIVING, name: ROOM_TYPE_NAMES[ROOM_TYPES.LIVING], icon: "🛏️" },
+    { type: ROOM_TYPES.GENERATOR, name: ROOM_TYPE_NAMES[ROOM_TYPES.GENERATOR], icon: "⚡" },
+    { type: ROOM_TYPES.FARM, name: ROOM_TYPE_NAMES[ROOM_TYPES.FARM], icon: "🌾" },
+    { type: ROOM_TYPES.WATER_PUMP, name: ROOM_TYPE_NAMES[ROOM_TYPES.WATER_PUMP], icon: "💧" },
     { type: ROOM_TYPES.WORKSHOP, name: ROOM_TYPE_NAMES[ROOM_TYPES.WORKSHOP], icon: "🔧" },
     { type: ROOM_TYPES.STORAGE, name: ROOM_TYPE_NAMES[ROOM_TYPES.STORAGE], icon: "📦" },
   ];
@@ -81,7 +85,7 @@ export function AddRoomButton({ bunkerId, onSuccess }: AddRoomButtonProps) {
               >
                 <span>{option.icon}</span>
                 <span>{option.name}</span>
-                <span className="ml-auto text-xs">{option.type === ROOM_TYPES.WORKSHOP ? "150 Scrap" : "150 Scrap"}</span>
+                <span className="ml-auto text-xs">150 Scrap</span>
               </button>
             ))}
           </div>

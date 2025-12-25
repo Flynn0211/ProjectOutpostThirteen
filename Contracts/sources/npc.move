@@ -67,6 +67,7 @@ module contracts::npc {
     const E_NPC_NOT_WORKING: u64 = 219;
     const E_ROOM_FULL: u64 = 220;
     const E_INSUFFICIENT_POWER: u64 = 221;
+    const E_INVALID_WORK_ROOM: u64 = 222;
     
     // Recovery Constants
     const RECOVERY_TIME_MS: u64 = 3600000;      // 1 giờ = 3,600,000 ms
@@ -344,14 +345,9 @@ module contracts::npc {
         // Kiểm tra NPC không được ON_MISSION hoặc KNOCKED
         assert!(npc.status == STATUS_IDLE, E_NPC_ON_MISSION);
         
-        // Kiểm tra item type hợp lệ để equip (Weapon, Armor, Tool)
+        // Chỉ cho phép equip: Weapon(1), Armor(2), Tool(3)
         let item_type = item::get_item_type(&item);
-        assert!(
-            item_type != item::type_collectible() && 
-            item_type != item::type_food() &&
-            item_type != item::type_revival_potion(),
-            E_CANNOT_EQUIP_THIS_ITEM
-        );
+        assert!(item_type == item::type_weapon() || item_type == item::type_armor() || item_type == item::type_tool(), E_CANNOT_EQUIP_THIS_ITEM);
         
         // Xác định slot key dựa trên item type
         // TYPE_WEAPON = 1, TYPE_ARMOR = 2, TYPE_TOOL = 3 (theo item.move)
@@ -721,6 +717,9 @@ module contracts::npc {
         
         // Check power sufficient
         assert!(bunker::is_power_sufficient(bunker), E_INSUFFICIENT_POWER);
+
+        // Only allow assigning to real work rooms (Generator/Farm/WaterPump/Workshop)
+        assert!(bunker::can_assign_worker(bunker, room_index), E_INVALID_WORK_ROOM);
         
         // Assign
         npc.status = STATUS_WORKING;
@@ -728,7 +727,7 @@ module contracts::npc {
         npc.work_started_at = clock::timestamp_ms(clock);
         
         // Update room
-        bunker::increment_room_workers(bunker, room_index);
+        bunker::increment_room_workers(bunker, room_index, clock);
         
         // Emit event
         utils::emit_work_assigned_event(
@@ -763,7 +762,7 @@ module contracts::npc {
         npc.work_started_at = 0;
         
         // Update room
-        bunker::decrement_room_workers(bunker, room_index);
+        bunker::decrement_room_workers(bunker, room_index, clock);
     }
     
     /// Phase 1: Feed NPC using bunker resources
@@ -901,6 +900,9 @@ module contracts::npc {
         
         // Kiểm tra đúng là Revival Potion (Type 5)
         assert!(item::get_item_type(&potion) == item::type_revival_potion(), E_INVALID_ITEM);
+
+        // Revival chỉ dùng để hồi phục NPC đang knocked
+        assert!(is_knocked(npc), E_INVALID_STATUS);
         
         // Burn potion
         item::destroy_item(potion);
@@ -924,10 +926,8 @@ module contracts::npc {
         npc.current_stamina = if (npc.current_stamina + revive_stamina > npc.max_stamina) { npc.max_stamina } else { npc.current_stamina + revive_stamina };
         
         // Reset status về IDLE nếu đang knocked
-        if (is_knocked(npc)) {
-            npc.status = STATUS_IDLE;
-            npc.knocked_at = 0;
-        };
+        npc.status = STATUS_IDLE;
+        npc.knocked_at = 0;
         
         // Emit event? Có thể dùng Heal event hoặc tạo ReviveEvent riêng. 
         // Hiện tại dùng log đơn giản hoặc reuse mechanics.
@@ -950,6 +950,19 @@ module contracts::npc {
         restore_stamina(npc, 20);
         feed_npc(npc, 50);
     }
+
+    /// Uống Water item để hồi thirst (và một ít stamina)
+    public entry fun consume_water_item(
+        npc: &mut NPC,
+        water_item: Item,
+        _clock: &Clock
+    ) {
+        assert!(item::get_item_type(&water_item) == item::type_water(), E_INVALID_ITEM);
+        item::destroy_item(water_item);
+
+        give_water(npc, 60);
+        restore_stamina(npc, 10);
+    }
     
     /// Dùng Medicine để hồi HP và Stamina
     public entry fun consume_medicine(
@@ -970,9 +983,13 @@ module contracts::npc {
         // Burn medicine
         item::destroy_item(medicine);
         
-        // Hồi HP và Stamina
+        // Hồi HP, Stamina, đồng thời tăng Hunger/Thirst ("máu, nước, no")
         heal_npc(npc, heal_amount);
         restore_stamina(npc, heal_amount);
+
+        let nourish = heal_amount / 2;
+        feed_npc(npc, nourish);
+        give_water(npc, nourish);
     }
     
     /// Entry function: Add item vào inventory (dành cho frontend/player)
@@ -1145,6 +1162,64 @@ module contracts::npc {
     /// Kiểm tra NPC có còn sống không
     public fun is_alive(npc: &NPC): bool {
         npc.current_hp > 0
+    }
+
+    // ==================== TEST HELPERS ====================
+
+    #[test_only]
+    /// Create a deterministic NPC for unit tests (no transfer, no events).
+    public fun new_npc_for_testing(owner: address, ctx: &mut TxContext): NPC {
+        NPC {
+            id: object::new(ctx),
+            rarity: 0,
+            profession: 0,
+            level: 1,
+            max_hp: 100,
+            current_hp: 100,
+            max_stamina: 100,
+            current_stamina: 100,
+            hunger: INITIAL_HUNGER,
+            thirst: INITIAL_THIRST,
+            skills: vector::empty<u8>(),
+            skill_points: 0,
+            respec_count: 0,
+            owner,
+            name: string::utf8(b"Test"),
+            status: STATUS_IDLE,
+            knocked_at: 0,
+            inventory_count: 0,
+            assigned_room: option::none(),
+            work_started_at: 0,
+            strength: 10,
+        }
+    }
+
+    #[test_only]
+    public fun destroy_npc_for_testing(npc: NPC) {
+        let NPC {
+            id,
+            rarity: _,
+            profession: _,
+            level: _,
+            max_hp: _,
+            current_hp: _,
+            max_stamina: _,
+            current_stamina: _,
+            hunger: _,
+            thirst: _,
+            skills: _,
+            skill_points: _,
+            respec_count: _,
+            owner: _,
+            name: _,
+            status: _,
+            knocked_at: _,
+            inventory_count: _,
+            assigned_room: _,
+            work_started_at: _,
+            strength: _,
+        } = npc;
+        id.delete();
     }
 
     /// Kiểm tra NPC có đủ điều kiện cho expedition không

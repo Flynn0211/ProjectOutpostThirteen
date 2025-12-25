@@ -16,6 +16,7 @@ module contracts::bunker {
     // ==================== MÃ LỖI ====================
     const E_NOT_OWNER: u64 = 300;               // Không phải chủ sở hữu
     const E_ROOM_NOT_FOUND: u64 = 302;          // Không tìm thấy phòng
+    const E_INVALID_ROOM_TYPE: u64 = 303;       // Loại phòng không hợp lệ
     const E_INSUFFICIENT_FOOD: u64 = 304;       // Không đủ thức ăn
     const E_INSUFFICIENT_WATER: u64 = 305;      // Không đủ nước
     const E_INSUFFICIENT_SCRAP: u64 = 306;      // Không đủ phế liệu
@@ -45,11 +46,19 @@ module contracts::bunker {
     // Tốc độ sản xuất (cơ bản, mỗi NPC, mỗi giờ)
     const FOOD_BASE_PRODUCTION: u64 = 10;       // Thức ăn: +10/NPC/h
     const WATER_BASE_PRODUCTION: u64 = 15;      // Nước: +15/NPC/h
+    const SCRAP_BASE_PRODUCTION: u64 = 8;       // Phế liệu: +8/NPC/h (Workshop)
     
     // Costs
     const UPGRADE_COST_BASE: u64 = 100;
     const ROOM_UPGRADE_COST: u64 = 50;
     const ADD_ROOM_COST: u64 = 150;
+
+    // Production tick (10 minutes)
+    const PRODUCTION_TICK_MS: u64 = 600000;
+    const PRODUCTION_TICKS_PER_HOUR: u64 = 6;
+
+    // Storage utility (passive)
+    const STORAGE_POWER_REDUCTION_PER_LEVEL: u64 = 2;
     
     // Room types
     const ROOM_TYPE_LIVING: u8 = 0;
@@ -58,6 +67,66 @@ module contracts::bunker {
     const ROOM_TYPE_WATER_PUMP: u8 = 3;  
     const ROOM_TYPE_WORKSHOP: u8 = 4;
     const ROOM_TYPE_STORAGE: u8 = 5;
+
+    fun is_valid_room_type(room_type: u8): bool {
+        room_type == ROOM_TYPE_LIVING
+            || room_type == ROOM_TYPE_GENERATOR
+            || room_type == ROOM_TYPE_FARM
+            || room_type == ROOM_TYPE_WATER_PUMP
+            || room_type == ROOM_TYPE_WORKSHOP
+            || room_type == ROOM_TYPE_STORAGE
+    }
+
+    /// Rooms that are valid for assigning workers (NPCs)
+    public fun is_assignable_room_type(room_type: u8): bool {
+        room_type == ROOM_TYPE_GENERATOR
+            || room_type == ROOM_TYPE_FARM
+            || room_type == ROOM_TYPE_WATER_PUMP
+            || room_type == ROOM_TYPE_WORKSHOP
+    }
+
+    /// Convenience helper for other modules
+    public fun can_assign_worker(bunker: &Bunker, room_index: u64): bool {
+        let (room_type, _level, _assigned, _cap, _rate, _acc) = get_room_info(bunker, room_index);
+        is_assignable_room_type(room_type)
+    }
+
+    fun update_room_accumulated(room: &mut Room, current_time: u64) {
+        let is_production_room = room.room_type == ROOM_TYPE_FARM
+            || room.room_type == ROOM_TYPE_WATER_PUMP
+            || room.room_type == ROOM_TYPE_WORKSHOP;
+        if (!is_production_room) return;
+        if (room.last_collected_at == 0 || room.assigned_npcs == 0) return;
+
+        let time_elapsed = current_time - room.last_collected_at;
+        let ticks = time_elapsed / PRODUCTION_TICK_MS;
+        if (ticks == 0) return;
+
+        // Carry fractional production forward to prevent rounding loss when collecting frequently.
+        // production = (rate * workers * ticks * efficiency) / (100 * ticks_per_hour)
+        let denom = 100 * PRODUCTION_TICKS_PER_HOUR; // 600
+        let numerator = room.production_rate * room.assigned_npcs * ticks * room.efficiency;
+        let total = room.production_remainder + numerator;
+        let production = total / denom;
+        room.production_remainder = total % denom;
+        room.accumulated = room.accumulated + production;
+        room.last_collected_at = room.last_collected_at + (ticks * PRODUCTION_TICK_MS);
+    }
+
+    /// Bunker capacity is derived from the sum of capacities of all Living rooms.
+    fun recalculate_bunker_capacity(bunker: &mut Bunker) {
+        let mut total = 0;
+        let mut i = 0;
+        let len = vector::length(&bunker.rooms);
+        while (i < len) {
+            let room = vector::borrow(&bunker.rooms, i);
+            if (room.room_type == ROOM_TYPE_LIVING) {
+                total = total + room.capacity;
+            };
+            i = i + 1;
+        };
+        bunker.capacity = total;
+    }
 
     // ==================== STRUCTS ====================
     
@@ -73,6 +142,7 @@ module contracts::bunker {
         production_rate: u64,      // Base rate/hour
         last_collected_at: u64,    // Timestamp lần claim cuối
         accumulated: u64,          // Production chưa claim
+        production_remainder: u64, // Remainder (mod 100*ticks_per_hour)
     }
 
     /// Bunker - Căn cứ chính (v2.0: Split resources)
@@ -119,6 +189,7 @@ module contracts::bunker {
             production_rate: 0,
             last_collected_at: 0,
             accumulated: 0,
+            production_remainder: 0,
         });
         
         // Generator - Máy phát điện
@@ -131,6 +202,7 @@ module contracts::bunker {
             production_rate: POWER_GENERATOR_PRODUCE,
             last_collected_at: 0,
             accumulated: 0,
+            production_remainder: 0,
         });
         
         // Farm - Nông trại
@@ -143,6 +215,7 @@ module contracts::bunker {
             production_rate: FOOD_BASE_PRODUCTION,
             last_collected_at: 0,
             accumulated: 0,
+            production_remainder: 0,
         });
         
         // Water Pump - Máy bơm nước
@@ -155,9 +228,10 @@ module contracts::bunker {
             production_rate: WATER_BASE_PRODUCTION,
             last_collected_at: 0,
             accumulated: 0,
+            production_remainder: 0,
         });
-        
-        let bunker = Bunker {
+
+        let mut bunker = Bunker {
             id: object::new(ctx),
             owner: sender,
             name: string::utf8(name),
@@ -171,6 +245,9 @@ module contracts::bunker {
             power_consumption: 0,
             rooms,
         };
+
+        // Capacity derives from Living rooms.
+        recalculate_bunker_capacity(&mut bunker);
         
         let bunker_id = object::uid_to_address(&bunker.id);
         
@@ -179,7 +256,7 @@ module contracts::bunker {
             bunker_id,
             sender,
             1,
-            INITIAL_CAPACITY,
+            bunker.capacity,
             clock
         );
         
@@ -202,9 +279,10 @@ module contracts::bunker {
         // Trừ scrap
         bunker.scrap = bunker.scrap - upgrade_cost;
         
-        // Tăng level và capacity
+        // Tăng level (capacity derives from Living rooms)
         bunker.level = bunker.level + 1;
-        bunker.capacity = bunker.capacity + CAPACITY_INCREASE_PER_LEVEL;
+
+        recalculate_bunker_capacity(bunker);
         
         // Emit event
         utils::emit_bunker_upgrade_event(
@@ -228,12 +306,21 @@ module contracts::bunker {
         
         // Trừ scrap
         bunker.scrap = bunker.scrap - ROOM_UPGRADE_COST;
-        
-        // Lấy room và upgrade
-        let room = vector::borrow_mut(&mut bunker.rooms, room_index);
-        room.level = room.level + 1;
-        room.capacity = room.capacity + CAPACITY_INCREASE_PER_LEVEL;
-        room.efficiency = if (room.efficiency + 10 > 100) { 100 } else { room.efficiency + 10 };
+
+        let is_living = {
+            // Lấy room và upgrade
+            let room = vector::borrow_mut(&mut bunker.rooms, room_index);
+            let is_living = room.room_type == ROOM_TYPE_LIVING;
+            room.level = room.level + 1;
+            room.capacity = room.capacity + CAPACITY_INCREASE_PER_LEVEL;
+            room.efficiency = if (room.efficiency + 10 > 100) { 100 } else { room.efficiency + 10 };
+            is_living
+        };
+
+        // Update bunker capacity if Living room changed.
+        if (is_living) {
+            recalculate_bunker_capacity(bunker);
+        };
     }
 
     /// Thêm phòng mới
@@ -243,18 +330,27 @@ module contracts::bunker {
         ctx: &mut TxContext
     ) {
         assert!(tx_context::sender(ctx) == bunker.owner, E_NOT_OWNER);
+        assert!(is_valid_room_type(room_type), E_INVALID_ROOM_TYPE);
         assert!(bunker.scrap >= ADD_ROOM_COST, E_INSUFFICIENT_SCRAP);
         
         // Trừ scrap
         bunker.scrap = bunker.scrap - ADD_ROOM_COST;
         
-        // Set production rate based on room type
+        // Set capacity & production rate based on room type
+        let capacity = if (room_type == ROOM_TYPE_LIVING) {
+            LIVING_QUARTERS_CAPACITY
+        } else {
+            PRODUCTION_ROOM_CAPACITY
+        };
+
         let production_rate = if (room_type == ROOM_TYPE_GENERATOR) {
             POWER_GENERATOR_PRODUCE
         } else if (room_type == ROOM_TYPE_FARM) {
             FOOD_BASE_PRODUCTION
         } else if (room_type == ROOM_TYPE_WATER_PUMP) {
             WATER_BASE_PRODUCTION
+        } else if (room_type == ROOM_TYPE_WORKSHOP) {
+            SCRAP_BASE_PRODUCTION
         } else {
             0
         };
@@ -263,15 +359,19 @@ module contracts::bunker {
         let new_room = Room {
             room_type,
             level: 1,
-            capacity: PRODUCTION_ROOM_CAPACITY,
+            capacity,
             efficiency: 50,
             assigned_npcs: 0,
             production_rate,
             last_collected_at: 0,
             accumulated: 0,
+            production_remainder: 0,
         };
         
         vector::push_back(&mut bunker.rooms, new_room);
+
+        // Capacity derives from Living rooms.
+        recalculate_bunker_capacity(bunker);
     }
 
     // ==================== RESOURCE MANAGEMENT (Phase 1) ====================
@@ -336,15 +436,9 @@ module contracts::bunker {
         
         let room = vector::borrow_mut(&mut bunker.rooms, room_index);
         let current_time = sui::clock::timestamp_ms(clock);
-        
-        // Calculate accumulated production
-        if (room.last_collected_at > 0 && room.assigned_npcs > 0) {
-            let time_elapsed = current_time - room.last_collected_at;
-            let hours_elapsed = time_elapsed / 3600000; // ms to hours
-            
-            let production = room.production_rate * room.assigned_npcs * hours_elapsed;
-            room.accumulated = room.accumulated + production;
-        };
+
+        // Calculate accumulated production using 10-minute ticks and room efficiency
+        update_room_accumulated(room, current_time);
         
         // Save values before borrowing bunker again
         let room_type = room.room_type;
@@ -355,8 +449,8 @@ module contracts::bunker {
             add_food(bunker, accumulated_amount);
         } else if (room_type == ROOM_TYPE_WATER_PUMP) {
             add_water(bunker, accumulated_amount);
-        } else if (room_type == ROOM_TYPE_GENERATOR) {
-            // Power is real-time, not accumulated
+        } else if (room_type == ROOM_TYPE_WORKSHOP) {
+            add_scrap(bunker, accumulated_amount);
         };
         
         // Emit event
@@ -371,7 +465,7 @@ module contracts::bunker {
         // Reset (need to borrow room again)
         let room = vector::borrow_mut(&mut bunker.rooms, room_index);
         room.accumulated = 0;
-        room.last_collected_at = current_time;
+        // Keep last_collected_at as-is (it is advanced by update_room_accumulated)
     }
 
     // ==================== POWER MANAGEMENT ====================
@@ -393,6 +487,7 @@ module contracts::bunker {
     public fun recalculate_power(bunker: &mut Bunker) {
         let mut total_generation = 0;
         let mut total_consumption = 0;
+        let mut storage_reduction = 0;
         
         let mut i = 0;
         let len = vector::length(&bunker.rooms);
@@ -409,13 +504,22 @@ module contracts::bunker {
                 total_consumption = total_consumption + (POWER_WATER_PUMP * room.assigned_npcs);
             } else if (room.room_type == ROOM_TYPE_WORKSHOP && room.assigned_npcs > 0) {
                 total_consumption = total_consumption + (POWER_WORKSHOP * room.assigned_npcs);
-            } else if (room.room_type == ROOM_TYPE_STORAGE && room.assigned_npcs > 0) {
-                total_consumption = total_consumption + (POWER_STORAGE * room.assigned_npcs);
+            };
+
+            // Storage utility: reduce total consumption based on storage level (passive, no workers needed)
+            if (room.room_type == ROOM_TYPE_STORAGE) {
+                storage_reduction = storage_reduction + (STORAGE_POWER_REDUCTION_PER_LEVEL * room.level);
             };
             
             i = i + 1;
         };
         
+        if (total_consumption > storage_reduction) {
+            total_consumption = total_consumption - storage_reduction;
+        } else {
+            total_consumption = 0;
+        };
+
         bunker.power_generation = total_generation;
         bunker.power_consumption = total_consumption;
     }
@@ -423,21 +527,33 @@ module contracts::bunker {
     // ==================== ROOM WORKER MANAGEMENT ====================
     
     /// Assign NPC to room (called from npc module)
-    public fun increment_room_workers(bunker: &mut Bunker, room_index: u64) {
+    public fun increment_room_workers(bunker: &mut Bunker, room_index: u64, clock: &Clock) {
         assert!(room_index < vector::length(&bunker.rooms), E_ROOM_NOT_FOUND);
         let room = vector::borrow_mut(&mut bunker.rooms, room_index);
         assert!(room.assigned_npcs < room.capacity, E_ROOM_FULL);
+
+        let now = sui::clock::timestamp_ms(clock);
+
+        // Accumulate production at the previous worker count before changing it.
+        if (room.assigned_npcs > 0) {
+            update_room_accumulated(room, now);
+        } else {
+            // When starting work from idle, reset timing so we don't count idle time.
+            room.last_collected_at = now;
+        };
         
         room.assigned_npcs = room.assigned_npcs + 1;
         recalculate_power(bunker);
     }
     
     /// Unassign NPC from room (called from npc module)
-    public fun decrement_room_workers(bunker: &mut Bunker, room_index: u64) {
+    public fun decrement_room_workers(bunker: &mut Bunker, room_index: u64, clock: &Clock) {
         assert!(room_index < vector::length(&bunker.rooms), E_ROOM_NOT_FOUND);
         let room = vector::borrow_mut(&mut bunker.rooms, room_index);
-        
+
         if (room.assigned_npcs > 0) {
+            let current_time = sui::clock::timestamp_ms(clock);
+            update_room_accumulated(room, current_time);
             room.assigned_npcs = room.assigned_npcs - 1;
             recalculate_power(bunker);
         };
@@ -536,4 +652,97 @@ module contracts::bunker {
     public fun room_type_water_pump(): u8 { ROOM_TYPE_WATER_PUMP }
     public fun room_type_workshop(): u8 { ROOM_TYPE_WORKSHOP }
     public fun room_type_storage(): u8 { ROOM_TYPE_STORAGE }
+
+    // ==================== TEST HELPERS ====================
+
+    #[test_only]
+    /// Create a bunker for unit tests (no transfer, no events).
+    public fun new_bunker_for_testing(owner: address, ctx: &mut TxContext): Bunker {
+        let mut rooms = vector::empty<Room>();
+
+        vector::push_back(&mut rooms, Room {
+            room_type: ROOM_TYPE_LIVING,
+            level: 1,
+            capacity: LIVING_QUARTERS_CAPACITY,
+            efficiency: 50,
+            assigned_npcs: 0,
+            production_rate: 0,
+            last_collected_at: 0,
+            accumulated: 0,
+            production_remainder: 0,
+        });
+
+        vector::push_back(&mut rooms, Room {
+            room_type: ROOM_TYPE_GENERATOR,
+            level: 1,
+            capacity: PRODUCTION_ROOM_CAPACITY,
+            efficiency: 50,
+            assigned_npcs: 0,
+            production_rate: POWER_GENERATOR_PRODUCE,
+            last_collected_at: 0,
+            accumulated: 0,
+            production_remainder: 0,
+        });
+
+        vector::push_back(&mut rooms, Room {
+            room_type: ROOM_TYPE_FARM,
+            level: 1,
+            capacity: PRODUCTION_ROOM_CAPACITY,
+            efficiency: 50,
+            assigned_npcs: 0,
+            production_rate: FOOD_BASE_PRODUCTION,
+            last_collected_at: 0,
+            accumulated: 0,
+            production_remainder: 0,
+        });
+
+        vector::push_back(&mut rooms, Room {
+            room_type: ROOM_TYPE_WATER_PUMP,
+            level: 1,
+            capacity: PRODUCTION_ROOM_CAPACITY,
+            efficiency: 50,
+            assigned_npcs: 0,
+            production_rate: WATER_BASE_PRODUCTION,
+            last_collected_at: 0,
+            accumulated: 0,
+            production_remainder: 0,
+        });
+
+        let mut bunker = Bunker {
+            id: object::new(ctx),
+            owner,
+            name: string::utf8(b"Test"),
+            level: 1,
+            capacity: INITIAL_CAPACITY,
+            current_npcs: 0,
+            food: INITIAL_FOOD,
+            water: INITIAL_WATER,
+            scrap: INITIAL_SCRAP,
+            power_generation: 0,
+            power_consumption: 0,
+            rooms,
+        };
+
+        recalculate_bunker_capacity(&mut bunker);
+        bunker
+    }
+
+    #[test_only]
+    public fun destroy_bunker_for_testing(bunker: Bunker) {
+        let Bunker {
+            id,
+            owner: _,
+            name: _,
+            level: _,
+            capacity: _,
+            current_npcs: _,
+            food: _,
+            water: _,
+            scrap: _,
+            power_generation: _,
+            power_consumption: _,
+            rooms: _,
+        } = bunker;
+        id.delete();
+    }
 }

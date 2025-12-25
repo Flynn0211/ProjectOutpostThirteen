@@ -2,7 +2,10 @@ import { IMAGES, ITEM_TYPES, RARITY } from "../constants";
 
 // Get image URL for item based on type and rarity
 export function getItemImageUrl(itemType: number, rarity: number): string {
-  const rarityIndex = Math.min(rarity, RARITY.MYTHIC);
+  // Item rarity on-chain is typically 1-4 (Common/Rare/Epic/Legendary).
+  // Normalize to 0-based index for image arrays.
+  const rarityIndex =
+    rarity >= 1 && rarity <= 4 ? rarity - 1 : Math.min(rarity, RARITY.MYTHIC);
   
   switch (itemType) {
     case ITEM_TYPES.WEAPON:
@@ -17,6 +20,8 @@ export function getItemImageUrl(itemType: number, rarity: number): string {
       return IMAGES.revivalPotion[0];
     case ITEM_TYPES.FOOD:
       return IMAGES.food[rarityIndex % IMAGES.food.length];
+    case ITEM_TYPES.WATER:
+      return IMAGES.collectible[0];
     case ITEM_TYPES.COLLECTIBLE:
       return IMAGES.collectible[rarityIndex % IMAGES.collectible.length];
     default:

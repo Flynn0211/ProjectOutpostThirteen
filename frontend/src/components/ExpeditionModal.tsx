@@ -1,10 +1,17 @@
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
 import { getOwnedObjects, getObjectType, getObject } from "../utils/sui";
 import type { NPC } from "../types";
 import { NPC_STATUS, RARITY_NAMES } from "../constants";
 import { PACKAGE_ID } from "../constants";
+import {
+  formatRemaining,
+  isNpcOnExpedition,
+  loadTrackedExpeditions,
+  upsertTrackedExpedition,
+  type ExpeditionResultSummary,
+} from "../utils/expeditionTracker";
 
 interface ExpeditionModalProps {
   isOpen: boolean;
@@ -19,9 +26,18 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
   const [selectedNpc, setSelectedNpc] = useState<string | null>(null);
   const [duration, setDuration] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const selected = npcs.find((n) => n.id === selectedNpc) || null;
   const staminaCost = 20 + (duration * 5);
   const canStart = !!selected && selected.hunger >= 20 && selected.thirst >= 20 && selected.current_stamina >= staminaCost;
+
+  const ownerAddress = account?.address ?? "";
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const interval = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || !account?.address) return;
@@ -32,11 +48,17 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
           account!.address,
           getObjectType("npc", "NPC")
         );
-        // Filter only IDLE NPCs
-        const idleNPCs = npcObjects.filter(
-          (npc: any) => npc.status === NPC_STATUS.IDLE
-        ) as NPC[];
-        setNpcs(idleNPCs);
+        const cleaned = (npcObjects as NPC[]).filter((n) => !!n && !!(n as any).id);
+        setNpcs(cleaned);
+
+        // Default selection: first available idle NPC not currently on expedition.
+        const firstAvailable = cleaned.find(
+          (n) => n.status === NPC_STATUS.IDLE && !isNpcOnExpedition(account!.address, n.id)
+        );
+        setSelectedNpc((prev) => {
+          if (prev && cleaned.some((n) => n.id === prev)) return prev;
+          return firstAvailable?.id ?? null;
+        });
       } catch (error) {
         console.error("Error loading NPCs:", error);
       }
@@ -44,6 +66,56 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
 
     loadNPCs();
   }, [isOpen, account]);
+
+  const trackedActive = useMemo(() => {
+    if (!ownerAddress) return [];
+    return loadTrackedExpeditions(ownerAddress)
+      .filter((e) => e.endsAtMs > nowMs)
+      .sort((a, b) => a.endsAtMs - b.endsAtMs);
+  }, [ownerAddress, nowMs]);
+
+  const availableNpcs = useMemo(() => {
+    if (!ownerAddress) return [];
+    return npcs.filter((n) => n.status === NPC_STATUS.IDLE && !isNpcOnExpedition(ownerAddress, n.id, nowMs));
+  }, [npcs, ownerAddress, nowMs]);
+
+  const parseExpeditionEvents = (events: any[] | undefined): ExpeditionResultSummary | undefined => {
+    if (!events || !Array.isArray(events)) return undefined;
+
+    const resultEvt = events.find((e) => typeof e?.type === "string" && /::utils::ExpeditionResultEvent$/.test(e.type));
+    const parsed = resultEvt?.parsedJson ?? resultEvt?.parsed_json;
+    const toNum = (v: any) => (typeof v === "number" ? v : typeof v === "string" ? Number(v) : 0);
+
+    const blueprintDroppedCount = events.filter(
+      (e) => typeof e?.type === "string" && /::utils::BlueprintDroppedEvent$/.test(e.type)
+    ).length;
+
+    if (!parsed) {
+      // Still return blueprint count if it exists.
+      if (blueprintDroppedCount > 0) {
+        return {
+          success: true,
+          foodGained: 0,
+          waterGained: 0,
+          scrapGained: 0,
+          itemsGained: 0,
+          damageTaken: 0,
+          blueprintDroppedCount,
+        };
+      }
+      return undefined;
+    }
+
+    return {
+      success: !!parsed.success,
+      foodGained: toNum(parsed.food_gained ?? parsed.foodGained),
+      waterGained: toNum(parsed.water_gained ?? parsed.waterGained),
+      scrapGained: toNum(parsed.scrap_gained ?? parsed.scrapGained),
+      itemsGained: toNum(parsed.items_gained ?? parsed.itemsGained),
+      damageTaken: toNum(parsed.damage_taken ?? parsed.damageTaken),
+      blueprintDroppedCount,
+    };
+  };
 
   const handleStartExpedition = async () => {
     if (!account?.address || !selectedNpc || !bunkerId) {
@@ -90,7 +162,25 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
       signAndExecute(
         { transactionBlock: tx },
         {
-          onSuccess: () => {
+          onSuccess: (result: any) => {
+            // Expedition on-chain executes immediately, but UI now tracks a timer client-side.
+            const endsAtMs = Date.now() + duration * 60 * 60 * 1000;
+            const npcName = selected?.name ?? "NPC";
+
+            const events = (result as any)?.events;
+            const summary = parseExpeditionEvents(events);
+
+            upsertTrackedExpedition(account.address, {
+              npcId,
+              npcName,
+              ownerAddress: account.address,
+              startedAtMs: Date.now(),
+              endsAtMs,
+              durationHours: duration,
+              notified: false,
+              result: summary,
+            });
+
             alert("Expedition started!");
             onClose();
           },
@@ -131,17 +221,47 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
           </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-6">
+          {/* Active expeditions */}
+          <div className="bg-[#1a1f2e] border-2 border-[#4deeac] rounded-xl p-4">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <div className="text-[#4deeac] font-bold uppercase text-sm tracking-wider">Active Expeditions</div>
+                <div className="text-xs text-white/70">NPCs currently exploring and time remaining</div>
+              </div>
+              <div className="text-xs text-white/70">{trackedActive.length} active</div>
+            </div>
+
+            {trackedActive.length === 0 ? (
+              <div className="text-white/60 text-sm mt-3">No NPCs on expedition.</div>
+            ) : (
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {trackedActive.map((e) => (
+                  <div
+                    key={e.npcId}
+                    className="bg-[#0d1117] border border-[#4deeac] rounded-lg p-3"
+                  >
+                    <div className="text-white font-bold truncate">{e.npcName}</div>
+                    <div className="text-xs text-white/70 mt-1">
+                      Time left: {formatRemaining(e.endsAtMs - nowMs)}
+                    </div>
+                    <div className="text-xs text-white/60 mt-1">Duration: {e.durationHours}h</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           {/* NPC Selection */}
           <div>
             <label className="block text-[#4deeac] font-bold mb-2 uppercase text-sm tracking-wider">Select NPC</label>
-            {npcs.length === 0 ? (
+            {availableNpcs.length === 0 ? (
               <div className="text-gray-400 text-center py-4">
-                No available NPCs (must be IDLE)
+                No available NPCs (must be IDLE and not already on expedition)
               </div>
             ) : (
               <div className="grid grid-cols-3 gap-4 max-h-96 overflow-y-auto">
-                {npcs.map((npc) => (
+                {availableNpcs.map((npc) => (
                   <div
                     key={npc.id}
                     onClick={() => setSelectedNpc(npc.id)}

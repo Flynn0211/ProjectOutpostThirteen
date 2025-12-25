@@ -30,6 +30,17 @@ export function AssignNPCModal({
   const [loading, setLoading] = useState(false);
   const [powerSufficient, setPowerSufficient] = useState<boolean>(true);
 
+  const getAssignedRoomIndex = (npc: NPC): number | null => {
+    const v: any = (npc as any).assigned_room;
+    if (v === null || v === undefined) return null;
+    if (typeof v === "number") return v;
+    if (typeof v === "object") {
+      if (Array.isArray(v.vec)) return v.vec.length ? Number(v.vec[0]) : null;
+      if ("some" in v) return Number((v as any).some);
+    }
+    return null;
+  };
+
   useEffect(() => {
     if (!isOpen || !account?.address) return;
 
@@ -39,11 +50,7 @@ export function AssignNPCModal({
           account!.address,
           getObjectType("npc", "NPC")
         );
-        // Filter only IDLE NPCs
-        const idleNPCs = npcObjects.filter(
-          (npc: any) => npc.status === NPC_STATUS.IDLE
-        ) as NPC[];
-        setNpcs(idleNPCs);
+        setNpcs(npcObjects as NPC[]);
       } catch (error) {
         console.error("Error loading NPCs:", error);
       }
@@ -64,7 +71,34 @@ export function AssignNPCModal({
 
     loadNPCs();
     loadBunkerPower();
-  }, [isOpen, account]);
+  }, [isOpen, account, bunkerId]);
+
+  const refresh = async () => {
+    if (!account?.address) return;
+    try {
+      const npcObjects = await getOwnedObjects(account.address, getObjectType("npc", "NPC"));
+      setNpcs(npcObjects as NPC[]);
+    } catch (error) {
+      console.error("Error refreshing NPCs:", error);
+    }
+    try {
+      const bunker = await getObject(bunkerId);
+      if (bunker) {
+        const gen = Number(bunker.power_generation || 0);
+        const con = Number(bunker.power_consumption || 0);
+        setPowerSufficient(gen >= con);
+      }
+    } catch (error) {
+      console.error("Error refreshing bunker power:", error);
+    }
+  };
+
+  const assignedHere = (npcs || []).filter((npc) => {
+    const assignedRoomIndex = getAssignedRoomIndex(npc);
+    return npc.status === NPC_STATUS.WORKING && assignedRoomIndex === roomIndex;
+  });
+
+  const idleNPCs = (npcs || []).filter((npc) => npc.status === NPC_STATUS.IDLE);
 
   const handleAssign = async () => {
     if (!account?.address || !selectedNpc) return;
@@ -90,8 +124,8 @@ export function AssignNPCModal({
         {
           onSuccess: () => {
             alert("NPC assigned to room!");
+            refresh();
             onSuccess();
-            onClose();
           },
           onError: (error: any) => {
             console.error("Assign error:", error);
@@ -102,6 +136,42 @@ export function AssignNPCModal({
     } catch (error: any) {
       console.error("Assign error:", error);
       alert("Assign failed: " + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUnassign = async (npcId: string) => {
+    if (!account?.address || !npcId) return;
+    setLoading(true);
+    try {
+      const tx = new TransactionBlock();
+      tx.moveCall({
+        target: `${PACKAGE_ID}::npc::unassign_from_room`,
+        arguments: [
+          tx.object(npcId),
+          tx.object(bunkerId),
+          tx.object("0x6"), // Clock
+        ],
+      });
+
+      signAndExecute(
+        { transactionBlock: tx },
+        {
+          onSuccess: () => {
+            alert("NPC removed from room!");
+            refresh();
+            onSuccess();
+          },
+          onError: (error: any) => {
+            console.error("Unassign error:", error);
+            alert("Remove failed: " + error.message);
+          },
+        }
+      );
+    } catch (error: any) {
+      console.error("Unassign error:", error);
+      alert("Remove failed: " + error.message);
     } finally {
       setLoading(false);
     }
@@ -142,15 +212,51 @@ export function AssignNPCModal({
             </div>
           </div>
 
-          {npcs.length === 0 ? (
+          {!powerSufficient && (
+            <div className="bg-gradient-to-r from-[#1a1f2e] to-[#0d1117] border-2 border-[#ffc107] p-4 rounded-xl shadow-[0_0_15px_rgba(255,193,7,0.25)]">
+              <div className="text-[#ffc107] font-bold">⚠️ Insufficient power</div>
+              <div className="text-white/80 text-sm mt-1">Remove NPCs or increase Generator output.</div>
+            </div>
+          )}
+
+          <div className="bg-gradient-to-br from-[#1a1f2e] to-[#0d1117] border-2 border-[#4deeac] p-4 rounded-xl shadow-[0_0_15px_rgba(77,238,172,0.25)]">
+            <div className="text-[#4deeac] font-bold mb-3 uppercase text-sm tracking-wider">NPCs in this room</div>
+
+            {assignedHere.length === 0 ? (
+              <div className="text-gray-400 text-sm">No NPCs currently assigned.</div>
+            ) : (
+              <div className="grid grid-cols-3 gap-4">
+                {assignedHere.map((npc) => (
+                  <div
+                    key={npc.id}
+                    className="p-4 rounded-xl border-2 border-[#4deeac] bg-gradient-to-br from-[#1a1f2e] to-[#0d1117] text-white shadow-[0_0_12px_rgba(77,238,172,0.25)]"
+                  >
+                    <div className="font-bold truncate text-base mb-1">{npc.name}</div>
+                    <div className="text-xs font-semibold text-[#4deeac]">{RARITY_NAMES[npc.rarity as keyof typeof RARITY_NAMES]}</div>
+                    <div className="text-xs mt-2 flex items-center gap-1"><span>❤️</span> HP: {npc.current_hp}/{npc.max_hp}</div>
+                    <button
+                      onClick={() => handleUnassign(npc.id)}
+                      disabled={loading}
+                      className="mt-3 w-full px-3 py-2 text-[11px] font-bold uppercase tracking-wider bg-gradient-to-r from-[#ffc107] to-[#ffb300] text-[#0d1117] rounded-lg disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {loading ? "Removing..." : "Remove"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {idleNPCs.length === 0 ? (
             <div className="text-center py-8">
               <div className="text-[#4deeac] text-xl font-bold">No available NPCs</div>
               <div className="text-gray-400 text-sm mt-2">(NPCs must be in IDLE status)</div>
             </div>
           ) : (
             <>
+              <div className="text-[#4deeac] font-bold uppercase text-sm tracking-wider">Add / Assign NPC</div>
               <div className="grid grid-cols-3 gap-4 max-h-96 overflow-y-auto pr-2">
-                {npcs.map((npc) => (
+                {idleNPCs.map((npc) => (
                   <div
                     key={npc.id}
                     onClick={() => setSelectedNpc(npc.id)}

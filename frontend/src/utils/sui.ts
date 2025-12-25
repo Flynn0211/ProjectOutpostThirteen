@@ -66,6 +66,7 @@ export function parseObjectData(data: any): any {
       production_rate: Number(r.production_rate ?? r.productionRate ?? 0),
       last_collected_at: Number(r.last_collected_at ?? r.lastCollectedAt ?? 0),
       accumulated: Number(r.accumulated ?? 0),
+      production_remainder: Number(r.production_remainder ?? r.productionRemainder ?? 0),
     }));
   }
 

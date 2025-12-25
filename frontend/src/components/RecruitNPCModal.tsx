@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
 import { PACKAGE_ID, IMAGES } from "../constants";
+import { SpriteSheet } from "./SpriteSheet";
 
 interface RecruitNPCModalProps {
   isOpen: boolean;
@@ -85,13 +86,9 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
             {sampleNPCs.map((src, idx) => (
               <div key={idx} className="flex flex-col items-center text-white transform transition-all duration-200 hover:scale-110">
                 <div className="w-20 h-20 bg-[#1a1f2e] rounded-lg border-2 border-[#4deeac] overflow-hidden shadow-[0_0_10px_rgba(77,238,172,0.3)] hover:shadow-[0_0_15px_rgba(77,238,172,0.6)] hover:border-[#5fffc0]">
-                  <div
-                    className="w-20 h-20 bg-contain bg-no-repeat bg-left"
-                    style={{
-                      backgroundImage: `url(${src})`,
-                      backgroundPosition: "0px 0px",
-                    }}
-                  />
+                  <div style={{ transform: "scale(0.625)", transformOrigin: "top left" }}>
+                    <SpriteSheet src={src} frameWidth={128} frameHeight={128} fps={12} playing={true} />
+                  </div>
                 </div>
               </div>
             ))}

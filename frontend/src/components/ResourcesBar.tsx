@@ -40,9 +40,16 @@ export function ResourcesBar({ bunker }: ResourcesBarProps) {
           <div className="w-10 h-10 bg-[#4deeac] rounded-full flex items-center justify-center text-2xl shadow-[0_0_15px_rgba(77,238,172,0.7)]">⚡</div>
           <div className="flex flex-col">
             <span className="text-xs font-bold text-[#4deeac] uppercase tracking-wider">Power</span>
-            <span className="text-xl font-bold text-white">
-              {bunker.power_generation}/{bunker.power_consumption}
-            </span>
+            <div className="text-[11px] font-bold text-white leading-tight">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[#4deeac]">Tạo:</span>
+                <span className="text-white">{Number(bunker.power_generation || 0)}</span>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-[#4deeac]">Dùng:</span>
+                <span className="text-white">{Number(bunker.power_consumption || 0)}</span>
+              </div>
+            </div>
           </div>
         </div>
 

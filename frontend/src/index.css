@@ -122,10 +122,25 @@ body::after {
 
 @keyframes spriteSheetFrames {
   from {
-    background-position: 0px 0px;
+    background-position: var(--sprite-from-x, 0px) 0px;
   }
   to {
     background-position: var(--sprite-to-x) 0px;
+  }
+}
+
+@keyframes npcPatrol {
+  0% {
+    transform: translateX(0px) scaleX(1);
+  }
+  49% {
+    transform: translateX(var(--npc-patrol-distance, 0px)) scaleX(1);
+  }
+  50% {
+    transform: translateX(var(--npc-patrol-distance, 0px)) scaleX(-1);
+  }
+  100% {
+    transform: translateX(0px) scaleX(-1);
   }
 }
 

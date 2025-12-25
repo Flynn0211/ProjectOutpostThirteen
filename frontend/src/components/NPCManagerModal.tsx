@@ -29,6 +29,7 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
   const [items, setItems] = useState<Item[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const [actionLoadingItemId, setActionLoadingItemId] = useState<string | null>(null);
+  const [selectedNpcFrameCount, setSelectedNpcFrameCount] = useState<number | undefined>(undefined);
 
   useEffect(() => {
     if (!isOpen || !account?.address) return;
@@ -203,7 +204,11 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
                 {npcs.map((npc) => (
                   <div
                     key={npc.id || Math.random()}
-                    onClick={() => npc && setSelectedNpc(npc)}
+                    onClick={() => {
+                      if (!npc) return;
+                      setSelectedNpcFrameCount(undefined);
+                      setSelectedNpc(npc);
+                    }}
                     className={`p-3 rounded-lg cursor-pointer transition-colors ${
                       selectedNpc?.id === npc.id
                         ? "bg-blue-600 border-2 border-blue-400"
@@ -229,14 +234,19 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
               <div>
                 <h3 className="text-xl font-bold text-white mb-4">Details</h3>
                 <div className="bg-gray-700 rounded-lg p-4 space-y-4">
-                  <div className="w-32 h-32 bg-gray-800 rounded-lg border border-gray-600 mx-auto">
-                    <SpriteSheet
-                      src={getNPCSpriteUrl(selectedNpc.rarity, selectedNpc.profession)}
-                      frameWidth={128}
-                      frameHeight={128}
-                      fps={12}
-                      playing={true}
-                    />
+                  <div className="w-44 h-44 bg-gray-800 rounded-lg border border-gray-600 mx-auto flex items-center justify-center overflow-hidden">
+                    <div style={{ transform: "scale(1.35)", transformOrigin: "center" }}>
+                      <SpriteSheet
+                        src={getNPCSpriteUrl(selectedNpc.rarity, selectedNpc.profession)}
+                        frameWidth={128}
+                        frameHeight={128}
+                        fps={10}
+                        startFrame={0}
+                        frameCount={Math.max(1, Math.min(4, selectedNpcFrameCount ?? 4))}
+                        playing={(selectedNpcFrameCount ?? 8) >= 8}
+                        onMeta={(m) => setSelectedNpcFrameCount(m.frameCount)}
+                      />
+                    </div>
                   </div>
                   
                   <div className="text-white space-y-2">

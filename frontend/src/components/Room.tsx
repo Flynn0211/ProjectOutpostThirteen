@@ -6,7 +6,7 @@ import { NPCComponent } from "./NPC";
 import { AssignNPCModal } from "./AssignNPCModal";
 import { useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
-import { PACKAGE_ID } from "../constants";
+import { NPC_STATUS, PACKAGE_ID } from "../constants";
 
 interface RoomProps {
   room: RoomType;
@@ -21,6 +21,14 @@ export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh }: Ro
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
   const roomImageUrl = getRoomImageUrl(room.room_type);
   const roomName = ROOM_TYPE_NAMES[room.room_type as keyof typeof ROOM_TYPE_NAMES] || "Unknown";
+
+  const ROOM_WIDTH = 384;
+  const ROOM_HEIGHT = 192;
+  const NPC_FRAME = 128;
+  const NPC_SCALE = 0.85;
+  const npcDisplayWidth = NPC_FRAME * NPC_SCALE;
+  const npcDisplayHeight = NPC_FRAME * NPC_SCALE;
+  const npcY = Math.max(0, (ROOM_HEIGHT - npcDisplayHeight) / 2);
 
   const canCollect = bunkerId && (room.room_type === 2 || room.room_type === 3); // FARM or WATER_PUMP
 
@@ -92,14 +100,25 @@ export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh }: Ro
 
         {/* NPCs in room */}
         <div className="absolute inset-0 pointer-events-none">
-          {npcs.map((npc, index) => (
-            <NPCComponent
-              key={npc.id}
-              npc={npc}
-              position={{ x: 40 + (index * 60), y: 52 }}
-              isWalking={room.assigned_npcs > 0}
-            />
-          ))}
+          {npcs.map((npc, index) => {
+            const baseX = 24 + index * (npcDisplayWidth + 14);
+            const maxDistance = Math.max(0, ROOM_WIDTH - 12 - baseX - npcDisplayWidth);
+            const patrolDistance = Math.min(160, maxDistance);
+            const isWalking = npc?.status === NPC_STATUS.WORKING;
+
+            return (
+              <NPCComponent
+                key={npc.id}
+                npc={npc}
+                position={{ x: baseX, y: npcY }}
+                isWalking={isWalking}
+                scale={NPC_SCALE}
+                patrolDistance={isWalking ? patrolDistance : 0}
+                patrolDurationSeconds={3 + (index % 3) * 0.7}
+                patrolDelaySeconds={(index % 4) * 0.25}
+              />
+            );
+          })}
         </div>
       </div>
 

@@ -38,12 +38,12 @@ export function MarketplaceModal({ isOpen, onClose }: MarketplaceModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md animate-fadeInScale">
       <div className="relative bg-gradient-to-br from-[#2a3447] via-[#1f2937] to-[#1a1f2e] border-[3px] border-[#4deeac] rounded-2xl p-8 max-w-6xl w-full max-h-[80vh] overflow-y-auto shadow-[0_0_50px_rgba(77,238,172,0.7),0_20px_80px_rgba(0,0,0,0.8)] transform transition-all duration-300">
-        <div className="absolute top-0 left-0 w-20 h-20 border-t-4 border-l-4 border-[#5fffc0] rounded-tl-2xl" />
-        <div className="absolute bottom-0 right-0 w-20 h-20 border-b-4 border-r-4 border-[#5fffc0] rounded-br-2xl" />
+        <div className="absolute top-0 left-0 w-20 h-20 border-t-4 border-l-4 border-[#5fffc0] rounded-tl-2xl pointer-events-none" />
+        <div className="absolute bottom-0 right-0 w-20 h-20 border-b-4 border-r-4 border-[#5fffc0] rounded-br-2xl pointer-events-none" />
 
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-[#4deeac]/5 to-transparent animate-shimmer" />
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-[#4deeac]/5 to-transparent animate-shimmer pointer-events-none" />
 
-        <div className="relative flex justify-between items-center mb-6">
+        <div className="relative z-10 flex justify-between items-center mb-6">
           <div className="flex items-center gap-3">
             <div className="w-3 h-3 bg-[#4deeac] rounded-full animate-pulse shadow-[0_0_10px_rgba(77,238,172,0.8)]" />
             <h2 className="text-3xl font-bold text-[#4deeac] uppercase tracking-wider drop-shadow-[0_0_10px_rgba(77,238,172,0.6)]">Marketplace</h2>
@@ -57,7 +57,7 @@ export function MarketplaceModal({ isOpen, onClose }: MarketplaceModalProps) {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-4 border-b-2 border-[#4deeac]">
+        <div className="relative z-10 flex gap-2 mb-4 border-b-2 border-[#4deeac]">
           <button
             onClick={() => setActiveTab("items")}
             className={`px-4 py-3 font-bold uppercase tracking-wider transition-all ${
@@ -101,7 +101,9 @@ export function MarketplaceModal({ isOpen, onClose }: MarketplaceModalProps) {
               <div className="grid grid-cols-4 gap-4">
                 {IMAGES.weapon.slice(0, 4).map((src, idx) => (
                   <div key={idx} className="bg-[#1a1f2e] border-2 border-[#4deeac] rounded-xl p-4 text-center hover:shadow-[0_0_15px_rgba(77,238,172,0.4)] transition-all">
-                    <img src={src} alt={`weapon-${idx}`} className="w-full h-32 object-cover rounded mb-2" />
+                    <div className="w-full h-32 bg-black/40 rounded mb-2 flex items-center justify-center p-2">
+                       <img src={src} alt={`weapon-${idx}`} className="w-full h-full object-contain" />
+                    </div>
                     <div className="text-white text-sm font-bold">Weapon #{idx + 1}</div>
                     <div className="text-xs text-[#4deeac]">Sample</div>
                   </div>
@@ -129,7 +131,9 @@ export function MarketplaceModal({ isOpen, onClose }: MarketplaceModalProps) {
               <div className="grid grid-cols-4 gap-4">
                 {IMAGES.room.slice(0, 4).map((src, idx) => (
                   <div key={idx} className="bg-[#1a1f2e] border-2 border-[#4deeac] rounded-xl p-4 text-center hover:shadow-[0_0_15px_rgba(77,238,172,0.4)] transition-all">
-                    <img src={src} alt={`resource-${idx}`} className="w-full h-32 object-cover rounded mb-2" />
+                    <div className="w-full h-32 bg-black/40 rounded mb-2 flex items-center justify-center p-2">
+                      <img src={src} alt={`resource-${idx}`} className="w-full h-full object-contain" />
+                    </div>
                     <div className="text-white text-sm font-bold">Resource #{idx + 1}</div>
                     <div className="text-xs text-[#4deeac]">Sample</div>
                   </div>

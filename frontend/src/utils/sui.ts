@@ -1,9 +1,16 @@
 import { SuiClient, getFullnodeUrl } from "@mysten/sui.js/client";
 import { PACKAGE_ID, NETWORK } from "../constants";
 
+const getRpcUrl = () => {
+  if (import.meta.env.DEV) {
+    return NETWORK === "testnet" ? "/sui-testnet" : "/sui-mainnet";
+  }
+  return getFullnodeUrl(NETWORK);
+};
+
 // Create Sui client
 export const suiClient = new SuiClient({
-  url: getFullnodeUrl(NETWORK),
+  url: getRpcUrl(),
 });
 
 // Helper to get function name
@@ -106,6 +113,27 @@ export async function getOwnedObjects(
     console.error("Error fetching owned objects:", error);
     return [];
   }
+}
+
+// Strict variant for React Query: propagate errors so cached data isn't replaced by [].
+export async function getOwnedObjectsStrict(
+  address: string,
+  objectType: string
+): Promise<any[]> {
+  const objects = await suiClient.getOwnedObjects({
+    owner: address,
+    filter: {
+      StructType: objectType,
+    },
+    options: {
+      showContent: true,
+      showType: true,
+    },
+  });
+
+  return objects.data
+    .map((obj: any) => parseObjectData(obj))
+    .filter(Boolean);
 }
 
 // Get object by ID

@@ -7,6 +7,7 @@ import { AssignNPCModal } from "./AssignNPCModal";
 import { useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
 import { NPC_STATUS, PACKAGE_ID } from "../constants";
+import { useGameStore } from "../state/gameStore";
 
 interface RoomProps {
   room: RoomType;
@@ -14,13 +15,16 @@ interface RoomProps {
   npcs: any[];
   bunkerId?: string;
   onRefresh?: () => void;
+  onOpenRoomDetail?: (roomIndex: number) => void;
 }
 
-export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh }: RoomProps) {
+export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh, onOpenRoomDetail }: RoomProps) {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
   const roomImageUrl = getRoomImageUrl(room.room_type);
   const roomName = ROOM_TYPE_NAMES[room.room_type as keyof typeof ROOM_TYPE_NAMES] || "Unknown";
+
+  const isFlashing = useGameStore((s) => !!s.flashingRooms[roomIndex]);
 
   const workers = Number(room.assigned_npcs ?? 0);
 
@@ -153,9 +157,18 @@ export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh }: Ro
   return (
     <>
       <div
-        className="relative flex-shrink-0 rounded-xl overflow-hidden border-3 border-[#4deeac] bg-[#2a3447] cursor-pointer transition-all shadow-[0_0_20px_rgba(77,238,172,0.3)] hover:border-[#5fffc0] hover:shadow-[0_0_30px_rgba(77,238,172,0.6)]"
+        className={[
+          "relative flex-shrink-0 rounded-xl overflow-hidden border-3 border-[#4deeac] bg-[#2a3447] cursor-pointer transition-all shadow-[0_0_20px_rgba(77,238,172,0.3)] hover:border-[#5fffc0] hover:shadow-[0_0_30px_rgba(77,238,172,0.6)]",
+          isFlashing ? "ring-4 ring-[#4deeac]/60 shadow-[0_0_45px_rgba(77,238,172,0.9)]" : "",
+        ].join(" ")}
         style={{ width: "384px", height: "192px" }}
-        onClick={() => bunkerId && setShowAssignModal(true)}
+        onClick={() => {
+          if (onOpenRoomDetail) {
+            onOpenRoomDetail(roomIndex);
+            return;
+          }
+          if (bunkerId) setShowAssignModal(true);
+        }}
       >
         {/* Room image */}
         <img

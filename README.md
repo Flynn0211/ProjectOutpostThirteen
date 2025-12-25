@@ -9,7 +9,7 @@
 ## 🚢 Testnet Deploy Notes (Quan trọng)
 
 - Xem hướng dẫn chi tiết: [TESTNET_README.md](TESTNET_README.md)
-- Dự án hiện chạy **testnet-only**. Mỗi lần `sui move publish` sẽ ra **PACKAGE_ID mới** → cập nhật lại `frontend/src/constants.ts`.
+- Dự án hiện chạy **testnet-only**. Mỗi lần `sui move publish` sẽ ra **PACKAGE_ID mới** → cập nhật lại `frontend/src/constants.ts` (hoặc set `VITE_PACKAGE_ID` trong `.env.local`).
 - **Breaking change dữ liệu on-chain**: struct `Room` đã thay đổi layout (thêm trường `production_remainder`) nên **Bunker objects cũ sẽ không tương thích** với package mới.
   - Sau khi republish, hãy **tạo bunker mới** bằng flow UI/entry `bunker::create_bunker`.
   - Nếu frontend đang load cả bunker cũ, bạn có thể gặp lỗi parse/hiển thị; nên tạo mới để test gameplay.

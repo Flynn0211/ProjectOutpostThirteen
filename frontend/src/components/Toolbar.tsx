@@ -4,8 +4,9 @@ import { MarketplaceModal } from "./MarketplaceModal";
 import { ExpeditionModal } from "./ExpeditionModal";
 import { RecruitNPCModal } from "./RecruitNPCModal";
 import { NPCManagerModal } from "./NPCManagerModal";
+import { UpgradeModal } from "./UpgradeModal";
 
-type ToolbarTab = "inventory" | "raid" | "market" | "expedition" | "recruit" | "npc-manager" | "logs" | null;
+type ToolbarTab = "inventory" | "raid" | "market" | "expedition" | "recruit" | "npc-manager" | "logs" | "upgrade" | null;
 
 interface ToolbarProps {
   activeTab: ToolbarTab;
@@ -74,6 +75,12 @@ export function Toolbar({ activeTab, onTabChange, bunkerId, onRefresh }: Toolbar
               >
                 <span className="relative z-10">📜 Logs</span>
               </button>
+              <button
+                onClick={() => onTabChange(activeTab === "upgrade" ? null : "upgrade")}
+                className={`${baseButton} ${activeTab === "upgrade" ? active : inactive}`}
+              >
+                <span className="relative z-10">⬆️ Upgrade</span>
+              </button>
             </div>
           </div>
         </div>
@@ -112,6 +119,17 @@ export function Toolbar({ activeTab, onTabChange, bunkerId, onRefresh }: Toolbar
         isOpen={activeTab === "npc-manager"}
         onClose={() => onTabChange(null)}
       />
+
+      {bunkerId && (
+        <UpgradeModal
+          isOpen={activeTab === "upgrade"}
+          onClose={() => onTabChange(null)}
+          bunkerId={bunkerId}
+          onSuccess={() => {
+            if (onRefresh) onRefresh();
+          }}
+        />
+      )}
     </>
   );
 }

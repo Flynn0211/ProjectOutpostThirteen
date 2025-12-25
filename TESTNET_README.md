@@ -72,7 +72,7 @@ Thông tin dưới đây là phần đã lọc từ output CLI khi mình publish
 
 - Command chạy: `sui client publish --gas-budget 400000000`
 - Transaction Digest: `GjP7MXLYBubStomijBw1U4uWb8PyQco5EpuZqmtqPgvM`
-- Published Package ID: `0xe6c8ec0758f4e751804b3f16b1c2ab353783975039bc0daf87b80adddae36e04`
+- Published Package ID: `0x7dcb6e2d97b26efb0f18e8c3b7a191a47d32145aa87500c24365993fc1a0563c`
 - Modules published: `bunker, crafting, expedition, item, marketplace, npc, raid, utils`
 
 - Gas / cost summary (from publish):

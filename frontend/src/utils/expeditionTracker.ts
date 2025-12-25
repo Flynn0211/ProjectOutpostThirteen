@@ -1,3 +1,5 @@
+import { NETWORK, PACKAGE_ID } from "../constants";
+
 export type ExpeditionResultSummary = {
   success: boolean;
   foodGained: number;
@@ -19,7 +21,7 @@ export type TrackedExpedition = {
   result?: ExpeditionResultSummary;
 };
 
-const storageKey = (ownerAddress: string) => `outpost.expeditions.v1.${ownerAddress}`;
+const storageKey = (ownerAddress: string) => `outpost.expeditions.v2.${NETWORK}.${PACKAGE_ID}.${ownerAddress}`;
 
 export function loadTrackedExpeditions(ownerAddress: string): TrackedExpedition[] {
   try {

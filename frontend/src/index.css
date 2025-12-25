@@ -93,10 +93,10 @@ body::after {
 
 @keyframes shimmer {
   0% {
-    transform: translateX(-100%);
+    background-position: -200% 0;
   }
   100% {
-    transform: translateX(100%);
+    background-position: 200% 0;
   }
 }
 
@@ -160,7 +160,9 @@ body::after {
 }
 
 .animate-shimmer {
-  animation: shimmer 3s infinite;
+  background-size: 200% 100%;
+  animation: shimmer 3s linear infinite;
+  pointer-events: none;
 }
 
 .animate-fadeInScale {

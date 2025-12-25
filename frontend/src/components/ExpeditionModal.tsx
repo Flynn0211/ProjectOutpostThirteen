@@ -1,10 +1,11 @@
 import { useMemo, useState, useEffect } from "react";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
-import { getOwnedObjects, getObjectType, getObject, suiClient } from "../utils/sui";
+import { getObject, suiClient } from "../utils/sui";
 import type { NPC } from "../types";
 import { NPC_STATUS, RARITY_NAMES } from "../constants";
 import { PACKAGE_ID } from "../constants";
+import { useOwnedNpcsEnabled } from "../query/ownedQueries";
 import {
   formatRemaining,
   isNpcOnExpedition,
@@ -23,16 +24,27 @@ interface ExpeditionModalProps {
 export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalProps) {
   const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
-  const [npcs, setNpcs] = useState<NPC[]>([]);
   const [selectedNpc, setSelectedNpc] = useState<string | null>(null);
   const [duration, setDuration] = useState(1);
   const [loading, setLoading] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const selected = npcs.find((n) => n.id === selectedNpc) || null;
-  const staminaCost = 20 + (duration * 5);
-  const canStart = !!selected && selected.hunger >= 20 && selected.thirst >= 20 && selected.current_stamina >= staminaCost;
 
   const ownerAddress = account?.address ?? "";
+
+  const npcsQuery = useOwnedNpcsEnabled(ownerAddress, isOpen);
+  const npcs = (npcsQuery.data ?? []) as NPC[];
+  const selected = npcs.find((n) => n.id === selectedNpc) || null;
+  const staminaCost = 20 + duration * 5;
+
+  // Match on-chain readiness (npc::is_ready_for_expedition + expedition stamina cost)
+  const canStart =
+    !!selected &&
+    selected.status === NPC_STATUS.IDLE &&
+    selected.current_hp > 20 &&
+    selected.current_stamina > 30 &&
+    selected.hunger > 20 &&
+    selected.thirst > 20 &&
+    selected.current_stamina >= staminaCost;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -41,32 +53,18 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
   }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || !account?.address) return;
+    if (!isOpen || !ownerAddress) return;
 
-    async function loadNPCs() {
-      try {
-        const npcObjects = await getOwnedObjects(
-          account!.address,
-          getObjectType("npc", "NPC")
-        );
-        const cleaned = (npcObjects as NPC[]).filter((n) => !!n && !!(n as any).id);
-        setNpcs(cleaned);
+    // Default selection: first available idle NPC not currently on expedition.
+    const firstAvailable = npcs.find(
+      (n) => n.status === NPC_STATUS.IDLE && !isNpcOnExpedition(ownerAddress, n.id)
+    );
 
-        // Default selection: first available idle NPC not currently on expedition.
-        const firstAvailable = cleaned.find(
-          (n) => n.status === NPC_STATUS.IDLE && !isNpcOnExpedition(account!.address, n.id)
-        );
-        setSelectedNpc((prev) => {
-          if (prev && cleaned.some((n) => n.id === prev)) return prev;
-          return firstAvailable?.id ?? null;
-        });
-      } catch (error) {
-        console.error("Error loading NPCs:", error);
-      }
-    }
-
-    loadNPCs();
-  }, [isOpen, account]);
+    setSelectedNpc((prev) => {
+      if (prev && npcs.some((n) => n.id === prev)) return prev;
+      return firstAvailable?.id ?? null;
+    });
+  }, [isOpen, ownerAddress, npcs]);
 
   const trackedActive = useMemo(() => {
     if (!ownerAddress) return [];
@@ -292,7 +290,11 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
           {/* NPC Selection */}
           <div>
             <label className="block text-[#4deeac] font-bold mb-2 uppercase text-sm tracking-wider">Select NPC</label>
-            {availableNpcs.length === 0 ? (
+            {npcsQuery.isLoading ? (
+              <div className="text-gray-400 text-center py-4">Loading NPCs...</div>
+            ) : npcsQuery.error ? (
+              <div className="text-red-300 text-center py-4">Failed to load NPCs: {String((npcsQuery.error as any)?.message ?? npcsQuery.error)}</div>
+            ) : availableNpcs.length === 0 ? (
               <div className="text-gray-400 text-center py-4">
                 No available NPCs (must be IDLE and not already on expedition)
               </div>
@@ -347,7 +349,7 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
           </button>
           {selected && !canStart && (
             <div className="mt-2 text-xs text-red-300">
-              Requires: Hunger ≥ 20, Thirst ≥ 20, Stamina ≥ {staminaCost}
+              Requires: Status=IDLE, HP &gt; 20, Hunger &gt; 20, Thirst &gt; 20, Stamina ≥ {staminaCost}
             </div>
           )}
         </div>

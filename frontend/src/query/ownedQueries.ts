@@ -62,6 +62,25 @@ export function useOwnedNpcs(ownerAddress: string) {
   });
 }
 
+// Variant for modals: lets callers control `enabled` to avoid background polling while closed.
+export function useOwnedNpcsEnabled(ownerAddress: string, enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.npcs(ownerAddress),
+    enabled: enabled && !!ownerAddress,
+    queryFn: async () => {
+      const objs = await getOwnedObjectsStrict(ownerAddress, getObjectType("npc", "NPC"));
+      return (objs as NPC[]).filter((n) => !!n && !!(n as any).id);
+    },
+    refetchInterval: DEFAULT_REFETCH_INTERVAL_MS,
+    staleTime: DEFAULT_STALE_TIME_MS,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+    retry: retryPolicy,
+    retryDelay: retryDelayMs,
+  });
+}
+
 export function useOwnedItems(ownerAddress: string) {
   return useQuery({
     queryKey: queryKeys.items(ownerAddress),

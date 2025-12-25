@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useCurrentAccount } from "@mysten/dapp-kit";
+import { useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "../query/queryKeys";
 import {
   loadTrackedExpeditions,
   markExpeditionNotified,
@@ -43,6 +45,7 @@ function summarize(exp: TrackedExpedition): string {
 export function ToastHost() {
   const account = useCurrentAccount();
   const ownerAddress = account?.address ?? "";
+  const queryClient = useQueryClient();
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const canRun = useMemo(() => !!ownerAddress, [ownerAddress]);
@@ -67,7 +70,9 @@ export function ToastHost() {
 
         setToasts((prev) => [toast, ...prev].slice(0, 5));
 
-        // Tell any open UI to refresh.
+        // Refresh cached on-chain data (owned objects) immediately.
+        queryClient.invalidateQueries({ queryKey: queryKeys.ownedRoot(ownerAddress) });
+        // Backward-compat: keep legacy events for components not yet migrated.
         window.dispatchEvent(new CustomEvent("inventory-updated"));
         window.dispatchEvent(new CustomEvent("bunker-updated"));
         window.dispatchEvent(new CustomEvent("npcs-updated"));

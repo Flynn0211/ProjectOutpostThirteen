@@ -1,6 +1,12 @@
 // Contract constants
-export const PACKAGE_ID = "0x73dd6222fa4a21c3ee025117fb3e682b6ca529d68201f12918d9e6be17285844";
-export const NETWORK = "testnet" as const;
+// NOTE: These can be overridden in dev/prod via Vite env vars:
+// - VITE_PACKAGE_ID=0x...
+// - VITE_NETWORK=testnet|mainnet
+const DEFAULT_PACKAGE_ID = "0x7dcb6e2d97b26efb0f18e8c3b7a191a47d32145aa87500c24365993fc1a0563c";
+const DEFAULT_NETWORK = "testnet" as const;
+
+export const PACKAGE_ID = (import.meta.env.VITE_PACKAGE_ID as string | undefined) ?? DEFAULT_PACKAGE_ID;
+export const NETWORK = ((import.meta.env.VITE_NETWORK as string | undefined) ?? DEFAULT_NETWORK) as "testnet" | "mainnet";
 
 // Image URLs
 export const IMAGES = {

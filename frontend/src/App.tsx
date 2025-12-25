@@ -5,6 +5,7 @@ import { WalletButton } from "./components/WalletButton";
 import { BunkerView } from "./components/BunkerView";
 import { Toolbar } from "./components/Toolbar";
 import { ToastHost } from "./components/ToastHost";
+import { RoomDetailModal } from "./components/RoomDetailModal";
 
 type ToolbarTab =
   | "inventory"
@@ -13,6 +14,7 @@ type ToolbarTab =
   | "expedition"
   | "recruit"
   | "npc-manager"
+  | "upgrade"
   | null;
 
 function App() {
@@ -20,6 +22,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<ToolbarTab>(null);
   const [bunkerId, setBunkerId] = useState<string | undefined>();
   const [refreshTick, setRefreshTick] = useState(0);
+  const [roomDetailIndex, setRoomDetailIndex] = useState<number | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -39,7 +42,7 @@ function App() {
     );
   }
 
-  if (!account) {
+  if (!account?.address) {
     console.log("No account, showing ConnectWallet");
     return <ConnectWallet />;
   }
@@ -54,7 +57,16 @@ function App() {
         <div className="absolute left-1/3 bottom-0 w-[520px] h-[520px] rounded-full bg-[radial-gradient(circle,rgba(77,238,172,0.08),transparent_65%)] blur-3xl" />
       </div>
 
-      <BunkerView onBunkerLoaded={setBunkerId} refreshTick={refreshTick} />
+      <BunkerView
+        onBunkerLoaded={setBunkerId}
+        refreshTick={refreshTick}
+        onOpenUpgradeBunker={() => {
+          setActiveTab("upgrade");
+        }}
+        onOpenRoomDetail={(roomIndex) => {
+          setRoomDetailIndex(roomIndex);
+        }}
+      />
       <Toolbar
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -64,6 +76,14 @@ function App() {
           setRefreshTick((t) => t + 1);
         }}
       />
+      {bunkerId && roomDetailIndex !== null && (
+        <RoomDetailModal
+          isOpen={true}
+          onClose={() => setRoomDetailIndex(null)}
+          bunkerId={bunkerId}
+          roomIndex={roomDetailIndex}
+        />
+      )}
       <ToastHost />
       <div className="absolute top-4 right-4 z-50">
         <WalletButton />

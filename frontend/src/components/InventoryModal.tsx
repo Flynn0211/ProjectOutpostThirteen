@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
 import { getOwnedObjects, getObjectType } from "../utils/sui";
@@ -9,6 +10,11 @@ import { ITEM_TYPES, NPC_STATUS, PACKAGE_ID, RARITY_NAMES } from "../constants";
 type InventoryEntry =
   | { kind: "item"; id: string; item: Item }
   | { kind: "blueprint"; id: string; blueprint: Blueprint };
+
+interface TooltipData {
+  entry: InventoryEntry;
+  rect: DOMRect;
+}
 
 interface InventoryModalProps {
   isOpen: boolean;
@@ -26,6 +32,33 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
   const [npcsLoading, setNpcsLoading] = useState(false);
   const [selectedNpcId, setSelectedNpcId] = useState<string>("");
   const [actionLoadingItemId, setActionLoadingItemId] = useState<string | null>(null);
+
+  // Tooltip state
+  const [tooltipData, setTooltipData] = useState<TooltipData | null>(null);
+  const hoverTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMouseEnter = (entry: InventoryEntry, e: React.MouseEvent) => {
+    if (hoverTimeout.current) {
+      clearTimeout(hoverTimeout.current);
+      hoverTimeout.current = null;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltipData({ entry, rect });
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimeout.current) clearTimeout(hoverTimeout.current);
+    hoverTimeout.current = setTimeout(() => {
+      setTooltipData(null);
+    }, 150); // Small delay to allow moving to the tooltip itself
+  };
+
+  const handleTooltipEnter = () => {
+    if (hoverTimeout.current) {
+      clearTimeout(hoverTimeout.current);
+      hoverTimeout.current = null;
+    }
+  };
 
   const getItemRarityName = (rarity: number): string => {
     // Item rarity on-chain: 1..4
@@ -302,19 +335,15 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
 
                 const title = isItem ? entry.item.name : "Blueprint";
 
-                const canUse =
-                  isItem &&
-                  isConsumable(entry.item.item_type) &&
-                  !!selectedNpc &&
-                  !(
-                    entry.item.item_type === ITEM_TYPES.REVIVAL_POTION &&
-                    selectedNpc.status !== NPC_STATUS.KNOCKED
-                  );
-                const useDisabled =
-                  !canUse || !!actionLoadingItemId || (isItem && actionLoadingItemId === entry.item.id);
+
 
                 return (
-                  <div key={slotId} className="relative group">
+                  <div
+                    key={slotId}
+                    className="relative group cursor-pointer"
+                    onMouseEnter={(e) => handleMouseEnter(entry, e)}
+                    onMouseLeave={handleMouseLeave}
+                  >
                     <div className="w-8 h-8 bg-[#0d1117] border border-[#4deeac] rounded overflow-hidden">
                       <img
                         src={slotImg}
@@ -323,66 +352,94 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
                         draggable={false}
                       />
                     </div>
-
-                    <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block z-50">
-                      <div className="w-64 bg-[#1a1f2e] border-2 border-[#4deeac] rounded-lg p-3 shadow-[0_0_20px_rgba(77,238,172,0.35)]">
-                        <div className="text-sm font-bold text-white truncate">{title}</div>
-
-                        {isItem ? (
-                          <div className="mt-1 text-xs text-white/80 space-y-0.5">
-                            <div>
-                              <span className="text-[#4deeac]">Độ hiếm:</span> {getItemRarityName(entry.item.rarity)}
-                            </div>
-                            <div>
-                              <span className="text-[#4deeac]">Loại:</span> {itemTypeName(entry.item.item_type)}
-                            </div>
-                            {entry.item.durability !== undefined ? (
-                              <div>
-                                <span className="text-[#4deeac]">Độ bền:</span> {entry.item.durability}/{entry.item.max_durability}
-                              </div>
-                            ) : null}
-
-                            {isConsumable(entry.item.item_type) ? (
-                              <div className="pt-2">
-                                <button
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    if (!useDisabled) handleUseConsumable(entry.item);
-                                  }}
-                                  disabled={useDisabled}
-                                  className={`w-full px-3 py-2 rounded text-xs font-bold transition-all ${
-                                    useDisabled
-                                      ? "bg-gray-700 text-gray-300 cursor-not-allowed"
-                                      : "bg-[#4deeac] text-[#0d1117] hover:bg-[#5fffc0]"
-                                  }`}
-                                  title={!selectedNpc ? "Chọn NPC trước" : ""}
-                                >
-                                  {actionLoadingItemId === entry.item.id ? "Đang dùng..." : "Dùng"}
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <div className="mt-1 text-xs text-white/80 space-y-0.5">
-                            <div>
-                              <span className="text-[#4deeac]">Độ hiếm:</span> {entry.blueprint.rarity}
-                            </div>
-                            <div>
-                              <span className="text-[#4deeac]">Loại:</span> {entry.blueprint.item_type}
-                            </div>
-                            <div>
-                              <span className="text-[#4deeac]">Lượt dùng:</span> {entry.blueprint.uses_remaining}/{entry.blueprint.max_uses}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
                   </div>
                 );
               })}
             </div>
           </div>
+        )}
+        {tooltipData && createPortal(
+          (() => {
+            const { entry, rect } = tooltipData;
+            const isItem = entry.kind === "item";
+            const title = isItem ? entry.item.name : "Blueprint";
+            
+            const canUse = isItem && isConsumable(entry.item.item_type) && !!selectedNpc && 
+              !(entry.item.item_type === ITEM_TYPES.REVIVAL_POTION && selectedNpc.status !== NPC_STATUS.KNOCKED);
+              
+            const useDisabled = !canUse || !!actionLoadingItemId || (isItem && actionLoadingItemId === entry.item.id);
+
+            const style: React.CSSProperties = {
+              top: rect.top - 8,
+              left: rect.left + rect.width / 2,
+              transform: "translate(-50%, -100%)",
+              position: "fixed",
+              zIndex: 9999,
+            };
+
+            return (
+              <div 
+                style={style} 
+                className="pointer-events-auto"
+                onMouseEnter={handleTooltipEnter}
+                onMouseLeave={handleMouseLeave}
+              >
+                  <div className="w-64 bg-[#1a1f2e] border-2 border-[#4deeac] rounded-lg p-3 shadow-[0_0_20px_rgba(77,238,172,0.35)] animate-fadeIn">
+                    <div className="text-sm font-bold text-white truncate">{title}</div>
+
+                    {isItem ? (
+                      <div className="mt-1 text-xs text-white/80 space-y-0.5">
+                        <div>
+                          <span className="text-[#4deeac]">Độ hiếm:</span> {getItemRarityName(entry.item.rarity)}
+                        </div>
+                        <div>
+                          <span className="text-[#4deeac]">Loại:</span> {itemTypeName(entry.item.item_type)}
+                        </div>
+                        {entry.item.durability !== undefined ? (
+                          <div>
+                            <span className="text-[#4deeac]">Độ bền:</span> {entry.item.durability}/{entry.item.max_durability}
+                          </div>
+                        ) : null}
+
+                        {isConsumable(entry.item.item_type) ? (
+                          <div className="pt-2">
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                if (!useDisabled) handleUseConsumable(entry.item);
+                              }}
+                              disabled={useDisabled}
+                              className={`w-full px-3 py-2 rounded text-xs font-bold transition-all ${
+                                useDisabled
+                                  ? "bg-gray-700 text-gray-300 cursor-not-allowed"
+                                  : "bg-[#4deeac] text-[#0d1117] hover:bg-[#5fffc0]"
+                              }`}
+                              title={!selectedNpc ? "Chọn NPC trước" : ""}
+                            >
+                              {actionLoadingItemId === entry.item.id ? "Đang dùng..." : "Dùng"}
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-xs text-white/80 space-y-0.5">
+                        <div>
+                          <span className="text-[#4deeac]">Độ hiếm:</span> {entry.blueprint.rarity}
+                        </div>
+                        <div>
+                          <span className="text-[#4deeac]">Loại:</span> {entry.blueprint.item_type}
+                        </div>
+                        <div>
+                          <span className="text-[#4deeac]">Lượt dùng:</span> {entry.blueprint.uses_remaining}/{entry.blueprint.max_uses}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+              </div>
+            );
+          })(),
+          document.body
         )}
       </div>
     </div>

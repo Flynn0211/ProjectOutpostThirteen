@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
-import { getOwnedObjects, getObjectType } from "../utils/sui";
-import type { Blueprint, Item, NPC } from "../types";
+import type { Blueprint, Item } from "../types";
 import { getBlueprintImageUrl, getItemImageUrl } from "../utils/imageUtils";
 import { ITEM_TYPES, NPC_STATUS, PACKAGE_ID, RARITY_NAMES } from "../constants";
+import { useMarketplace } from "../hooks/useMarketplace";
+import { useInventory } from "../hooks/useInventory";
 
 type InventoryEntry =
   | { kind: "item"; id: string; item: Item }
@@ -24,12 +25,7 @@ interface InventoryModalProps {
 export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
   const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
-  const [items, setItems] = useState<Item[]>([]);
-  const [blueprints, setBlueprints] = useState<Blueprint[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const [npcs, setNpcs] = useState<NPC[]>([]);
-  const [npcsLoading, setNpcsLoading] = useState(false);
+  const { listItem } = useMarketplace();
   const [selectedNpcId, setSelectedNpcId] = useState<string>("");
   const [actionLoadingItemId, setActionLoadingItemId] = useState<string | null>(null);
 
@@ -70,71 +66,18 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
     return (RARITY_NAMES as any)[rarity] ?? String(rarity);
   };
 
-  useEffect(() => {
-    if (!isOpen || !account?.address) return;
-
-    async function loadItems() {
-      setLoading(true);
-      try {
-        const [itemObjects, blueprintObjects] = await Promise.all([
-          getOwnedObjects(account!.address, getObjectType("item", "Item")),
-          getOwnedObjects(account!.address, getObjectType("crafting", "Blueprint")),
-        ]);
-        setItems((itemObjects as Item[]).filter((i) => !!i && !!(i as any).id));
-        setBlueprints((blueprintObjects as Blueprint[]).filter((b) => !!b && !!(b as any).id));
-      } catch (error) {
-        console.error("Error loading items:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    async function loadNPCs() {
-      setNpcsLoading(true);
-      try {
-        const npcObjects = await getOwnedObjects(
-          account!.address,
-          getObjectType("npc", "NPC")
-        );
-        const cleaned = (npcObjects as NPC[]).filter((n) => !!n && !!(n as any).id);
-        setNpcs(cleaned);
-        setSelectedNpcId((prev) => {
-          if (prev && cleaned.some((n) => n.id === prev)) return prev;
-          return cleaned.length > 0 ? cleaned[0].id : "";
-        });
-      } catch (error) {
-        console.error("Error loading NPCs:", error);
-      } finally {
-        setNpcsLoading(false);
-      }
-    }
-
-    loadItems();
-    loadNPCs();
-  }, [isOpen, account]);
+  // Shared inventory hook
+  const { items, blueprints, npcs, loading, refresh: refreshInventory } = useInventory(isOpen);
 
   useEffect(() => {
-    if (!isOpen || !account?.address) return;
-
-    const onInventoryUpdated = () => {
-      // Reload items/blueprints when another part of the app updates inventory.
-      (async () => {
-        try {
-          const [itemObjects, blueprintObjects] = await Promise.all([
-            getOwnedObjects(account.address, getObjectType("item", "Item")),
-            getOwnedObjects(account.address, getObjectType("crafting", "Blueprint")),
-          ]);
-          setItems((itemObjects as Item[]).filter((i) => !!i && !!(i as any).id));
-          setBlueprints((blueprintObjects as Blueprint[]).filter((b) => !!b && !!(b as any).id));
-        } catch (e) {
-          console.error("Error refreshing inventory:", e);
-        }
-      })();
-    };
-
-    window.addEventListener("inventory-updated", onInventoryUpdated);
-    return () => window.removeEventListener("inventory-updated", onInventoryUpdated);
-  }, [isOpen, account]);
+    // Select first NPC if available and none selected
+    if (npcs.length > 0 && !selectedNpcId) {
+        setSelectedNpcId(npcs[0].id);
+    } else if (selectedNpcId && !npcs.find(n => n.id === selectedNpcId)) {
+        // If selected NPC is gone (e.g. sold or error), select first available or empty
+        setSelectedNpcId(npcs.length > 0 ? npcs[0].id : "");
+    }
+  }, [npcs, selectedNpcId]);
 
   const selectedNpc = npcs.find((n) => n.id === selectedNpcId) ?? null;
 
@@ -199,24 +142,7 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
         {
           onSuccess: () => {
             setTimeout(async () => {
-              if (!account?.address) return;
-              try {
-                const [npcObjects, itemObjects] = await Promise.all([
-                  getOwnedObjects(account.address, getObjectType("npc", "NPC")),
-                  getOwnedObjects(account.address, getObjectType("item", "Item")),
-                ]);
-                const cleanedNpcs = (npcObjects as NPC[]).filter((n) => !!n && !!(n as any).id);
-                setNpcs(cleanedNpcs);
-                setSelectedNpcId((prev) => {
-                  if (prev && cleanedNpcs.some((n) => n.id === prev)) return prev;
-                  return cleanedNpcs.length > 0 ? cleanedNpcs[0].id : "";
-                });
-                setItems((itemObjects as Item[]).filter((i) => !!i && !!(i as any).id));
-              } catch (e) {
-                console.error("Error refreshing after using item:", e);
-              } finally {
-                setActionLoadingItemId(null);
-              }
+              await refreshInventory();
             }, 1200);
           },
           onError: (error: any) => {
@@ -231,6 +157,35 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
       alert("Use item failed: " + (error?.message ?? String(error)));
       setActionLoadingItemId(null);
     }
+  };
+
+  // List Item Logic
+  const [listingPrice, setListingPrice] = useState<string>("");
+  const [isListingMode, setIsListingMode] = useState(false);
+
+  const handleListCallback = async (item: Item) => {
+     if (!listingPrice || isNaN(Number(listingPrice))) {
+        alert("Please enter a valid price in SUI");
+        return;
+     }
+
+     const priceInMist = Math.floor(Number(listingPrice) * 1_000_000_000).toString();
+     
+     setActionLoadingItemId(item.id);
+     try {
+       await listItem(item.id, priceInMist, signAndExecute);
+       alert(`Listed ${item.name} for ${listingPrice} SUI successful!`);
+       // Refresh
+       refreshInventory();
+     } catch (err: any) {
+       console.error(err);
+       alert("Listing failed: " + err.message);
+     } finally {
+       setActionLoadingItemId(null);
+       setListingPrice("");
+       setIsListingMode(false);
+       setTooltipData(null); // Close tooltip
+     }
   };
 
   if (!isOpen) return null;
@@ -274,7 +229,7 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
                   <div className="text-xs text-white/70">Select an NPC to use consumables from inventory</div>
                 </div>
 
-                {npcsLoading ? (
+                {loading ? (
                   <div className="text-white/70 text-sm">Loading NPCs...</div>
                 ) : npcs.length === 0 ? (
                   <div className="text-white/70 text-sm">No NPCs owned</div>
@@ -434,6 +389,56 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
                           <span className="text-[#4deeac]">Lượt dùng:</span> {entry.blueprint.uses_remaining}/{entry.blueprint.max_uses}
                         </div>
                       </div>
+                    )}
+
+                    {/* List Button for Items */}
+                    {isItem && (
+                       <div className="pt-2 border-t border-white/10 mt-2">
+                          {isListingMode && actionLoadingItemId === entry.item.id ? (
+                             <div className="flex flex-col gap-1">
+                                <input 
+                                  type="text" 
+                                  placeholder="Price (SUI)"
+                                  value={listingPrice}
+                                  onChange={(e) => setListingPrice(e.target.value)}
+                                  className="bg-[#0d1117] text-white text-xs p-1 border border-[#4deeac] rounded"
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                                <div className="flex gap-1">
+                                   <button 
+                                     onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleListCallback(entry.item);
+                                     }}
+                                     className="flex-1 bg-[#4deeac] text-[#0d1117] text-xs font-bold py-1 rounded hover:bg-[#5fffc0]"
+                                   >
+                                     Confirm
+                                   </button>
+                                   <button 
+                                     onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsListingMode(false);
+                                        setActionLoadingItemId(null);
+                                     }}
+                                     className="flex-1 bg-red-500 text-white text-xs font-bold py-1 rounded hover:bg-red-600"
+                                   >
+                                     Cancel
+                                   </button>
+                                </div>
+                             </div>
+                          ) : (
+                             <button
+                               onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIsListingMode(true);
+                                  setActionLoadingItemId(entry.item.id);
+                               }}
+                               className="w-full bg-yellow-500 text-[#0d1117] text-xs font-bold py-1 rounded hover:bg-yellow-400 mb-1"
+                             >
+                               List on Market
+                             </button>
+                          )}
+                       </div>
                     )}
                   </div>
               </div>

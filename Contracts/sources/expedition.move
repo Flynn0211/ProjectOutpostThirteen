@@ -91,16 +91,15 @@ module contracts::expedition {
         let roll = utils::random_in_range(0, 100, clock, ctx);
         
         // Xử lý kết quả dựa trên roll
-        if (roll < 5) {
-            // CRITICAL FAILURE - NPC KNOCKED OUT
-            handle_critical_failure(npc, bunker, clock);
-        } else if (roll < FAILURE_THRESHOLD + 20) {
-            // Failure
-            handle_failure(npc, bunker, clock);
-        } else if (roll < PARTIAL_SUCCESS_THRESHOLD + 20) {
-            // Partial Success
+        // UPDATE: Removed Mission Failed.
+        // 0-44: Partial Success (45%)
+        // 45-94: Success (50%)
+        // 95-100: Critical Success (5%)
+        
+        if (roll < SUCCESS_THRESHOLD) { // < 45
+            // Partial Success (Merging Failure/Critical Failure into this)
             handle_partial_success(npc, bunker, duration, clock, ctx);
-        } else if (roll < SUCCESS_THRESHOLD + 50) {
+        } else if (roll < CRITICAL_SUCCESS_THRESHOLD) { // < 95
             // Success
             handle_success(npc, bunker, duration, item_chance, clock, ctx);
         } else {

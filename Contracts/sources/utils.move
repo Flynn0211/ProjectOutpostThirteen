@@ -104,6 +104,19 @@ module contracts::utils {
     const STRENGTH_MYTHIC_MIN: u64 = 200;
     const STRENGTH_MYTHIC_MAX: u64 = 250;
 
+    // ==================== MARKETPLACE CONSTANTS ====================
+    
+    // Base prices in MIST (1 SUI = 1_000_000_000 MIST)
+    const PRICE_BASE_COMMON: u64 = 1_000_000_000;        // 1 SUI
+    const PRICE_BASE_UNCOMMON: u64 = 5_000_000_000;      // 5 SUI
+    const PRICE_BASE_RARE: u64 = 10_000_000_000;         // 10 SUI
+    const PRICE_BASE_EPIC: u64 = 50_000_000_000;         // 50 SUI
+    const PRICE_BASE_LEGENDARY: u64 = 200_000_000_000;   // 200 SUI
+    const PRICE_BASE_MYTHIC: u64 = 1_000_000_000_000;    // 1000 SUI
+    
+    // Price per stat point (HP, Atk, Def, Luck)
+    const PRICE_PER_STAT_POINT: u64 = 10_000_000;        // 0.01 SUI
+
     // ==================== ERROR CODES ====================
     const E_INVALID_RARITY: u64 = 1;
     const E_INVALID_PROFESSION: u64 = 2;
@@ -909,4 +922,13 @@ module contracts::utils {
     
     public fun recruit_cost(): u64 { RECRUIT_COST_MIST }
     public fun base_expedition_duration(): u64 { BASE_EXPEDITION_DURATION }
+
+    // ==================== MARKETPLACE GETTERS ====================
+    public fun price_base_common(): u64 { PRICE_BASE_COMMON }
+    public fun price_base_uncommon(): u64 { PRICE_BASE_UNCOMMON }
+    public fun price_base_rare(): u64 { PRICE_BASE_RARE }
+    public fun price_base_epic(): u64 { PRICE_BASE_EPIC }
+    public fun price_base_legendary(): u64 { PRICE_BASE_LEGENDARY }
+    public fun price_base_mythic(): u64 { PRICE_BASE_MYTHIC }
+    public fun price_per_stat_point(): u64 { PRICE_PER_STAT_POINT }
 }

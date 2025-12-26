@@ -1,11 +1,17 @@
 // NOTE: These can be overridden in dev/prod via Vite env vars:
 // - VITE_PACKAGE_ID=0x...
 // - VITE_NETWORK=testnet|mainnet
-const DEFAULT_PACKAGE_ID = "0x810c6ad98b1ac27d23b21565ab926650e247567068cc749df09a3ea54bdd43c3";
+const DEFAULT_PACKAGE_ID = "0x83604ce2ad428ec414e0061d138ed8e83117d06e9920bb2508dd416bddeb285a";
 const DEFAULT_NETWORK = "testnet" as const;
 
 export const PACKAGE_ID = (import.meta.env.VITE_PACKAGE_ID as string | undefined) ?? DEFAULT_PACKAGE_ID;
 export const NETWORK = ((import.meta.env.VITE_NETWORK as string | undefined) ?? DEFAULT_NETWORK) as "testnet" | "mainnet";
+
+// Marketplace Shared Object ID (Placeholder - Update with real ID after deployment)
+export const MARKETPLACE_OBJECT_ID = (import.meta.env.VITE_MARKETPLACE_ID as string) ?? "0xce7b686ece61f88ce09357a1016aaa0d4a77c59e7a7c3d986073b02bbf756c25";
+
+// Raid History Shared Object ID (Placeholder - Update with real ID after deployment)
+export const RAID_HISTORY_OBJECT_ID = (import.meta.env.VITE_RAID_HISTORY_ID as string) ?? "0x5be34ce9e20c9d7ee24ecb097cd16adf7cc23bbe97d3bcbde28434e53dbaceeb";
 
 // Image URLs
 export const IMAGES = {
@@ -191,3 +197,12 @@ export const RARITY_NAMES = {
 // Rooms per row
 export const ROOMS_PER_ROW = 3;
 
+// Base Prices (in MIST)
+export const BASE_PRICES = {
+  [RARITY.COMMON]: 1_000_000_000,
+  [RARITY.UNCOMMON]: 5_000_000_000,
+  [RARITY.RARE]: 10_000_000_000,
+  [RARITY.EPIC]: 50_000_000_000,
+  [RARITY.LEGENDARY]: 200_000_000_000,
+  [RARITY.MYTHIC]: 1_000_000_000_000,
+};

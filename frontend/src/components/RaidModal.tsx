@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
-import { PACKAGE_ID } from "../constants";
+import { PACKAGE_ID, RAID_HISTORY_OBJECT_ID } from "../constants";
 
 interface RaidModalProps {
   isOpen: boolean;
@@ -14,15 +14,28 @@ export function RaidModal({ isOpen, onClose, bunkerId }: RaidModalProps) {
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
   const [npcCount, setNpcCount] = useState(1);
   const [targetBunkerId, setTargetBunkerId] = useState("");
-  const [raidHistoryId, setRaidHistoryId] = useState("");
   const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
 
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) setTargetBunkerId(text.trim());
+    } catch (err) {
+      console.error("Failed to read clipboard:", err);
+    }
+  };
+
   const handleRaid = async () => {
-    if (!account?.address || !targetBunkerId || !raidHistoryId) {
-      alert("Missing target bunker or RaidHistory ID.");
+    if (!account?.address || !targetBunkerId) {
+      alert("Missing target bunker ID.");
       return;
+    }
+
+    if (!RAID_HISTORY_OBJECT_ID || RAID_HISTORY_OBJECT_ID.includes("00000000")) {
+       alert("Raid History Object ID is not configured (placeholder). Cannot start raid.");
+       return;
     }
 
     setLoading(true);
@@ -36,7 +49,7 @@ export function RaidModal({ isOpen, onClose, bunkerId }: RaidModalProps) {
           tx.pure(npcCount, "u64"),
           tx.object(targetBunkerId),
           coin,
-          tx.object(raidHistoryId),
+          tx.object(RAID_HISTORY_OBJECT_ID),
           tx.object("0x6"), // Clock
         ],
       });
@@ -44,7 +57,7 @@ export function RaidModal({ isOpen, onClose, bunkerId }: RaidModalProps) {
         { transactionBlock: tx },
         {
           onSuccess: () => {
-            alert("Raid started!");
+            alert("Raid started! Check result in Logs.");
             onClose();
           },
           onError: (error: any) => {
@@ -86,28 +99,27 @@ export function RaidModal({ isOpen, onClose, bunkerId }: RaidModalProps) {
 
         <div className="relative space-y-5">
           <div>
-            <label className="block text-[#4deeac] font-bold mb-2 uppercase text-sm tracking-wider">Raid History ID</label>
-            <input
-              type="text"
-              value={raidHistoryId}
-              onChange={(e) => setRaidHistoryId(e.target.value)}
-              placeholder="0x... (contracts::raid::RaidHistory)"
-              className="w-full px-5 py-3 bg-[#1a1f2e] text-white border-2 border-[#4deeac] rounded-xl focus:outline-none focus:border-[#5fffc0] focus:shadow-[0_0_20px_rgba(77,238,172,0.5)] transition-all duration-200"
-            />
-          </div>
-          <div>
             <label className="block text-[#4deeac] font-bold mb-2 uppercase text-sm tracking-wider">Target Bunker ID</label>
-            <input
-              type="text"
-              value={targetBunkerId}
-              onChange={(e) => setTargetBunkerId(e.target.value)}
-              placeholder="0x..."
-              className="w-full px-5 py-3 bg-[#1a1f2e] text-white border-2 border-[#4deeac] rounded-xl focus:outline-none focus:border-[#5fffc0] focus:shadow-[0_0_20px_rgba(77,238,172,0.5)] transition-all duration-200"
-            />
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={targetBunkerId}
+                onChange={(e) => setTargetBunkerId(e.target.value)}
+                placeholder="0x..."
+                className="flex-1 px-5 py-3 bg-[#1a1f2e] text-white border-2 border-[#4deeac] rounded-xl focus:outline-none focus:border-[#5fffc0] focus:shadow-[0_0_20px_rgba(77,238,172,0.5)] transition-all duration-200"
+              />
+              <button
+                onClick={handlePaste}
+                className="px-4 py-3 bg-[#1a1f2e] text-[#4deeac] border-2 border-[#4deeac] rounded-xl hover:bg-[#4deeac] hover:text-[#1a1f2e] font-bold transition-all"
+                title="Paste from clipboard"
+              >
+                📋
+              </button>
+            </div>
           </div>
 
           <div>
-            <label className="block text-[#4deeac] font-bold mb-2 uppercase text-sm tracking-wider">NPC Count</label>
+            <label className="block text-[#4deeac] font-bold mb-2 uppercase text-sm tracking-wider">NPC Count (Attack Force)</label>
             <input
               type="number"
               min={1}
@@ -140,4 +152,3 @@ export function RaidModal({ isOpen, onClose, bunkerId }: RaidModalProps) {
     </div>
   );
 }
-

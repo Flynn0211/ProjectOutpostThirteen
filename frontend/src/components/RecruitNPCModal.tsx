@@ -15,10 +15,13 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
   const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
   const [loading, setLoading] = useState(false);
+  const [recruitCount, setRecruitCount] = useState(1);
 
   useEffect(() => {
     if (isOpen) {
+      // eslint-disable-next-line
       setLoading(false);
+      setRecruitCount(1);
     }
   }, [isOpen]);
 
@@ -30,29 +33,36 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
     setLoading(true);
     try {
       const tx = new TransactionBlock();
-      const [coin] = tx.splitCoins(tx.gas, [tx.pure(100_000_000)]); // 0.1 SUI
-      const randomName = generateRandomName();
-      console.log("Recruiting NPC with name:", randomName);
+      // Create an array of recruit costs [100000000, 100000000, ...] based on count
+      const amounts = Array(recruitCount).fill(tx.pure(100_000_000));
+      
+      const coins = tx.splitCoins(tx.gas, amounts);
 
-      tx.moveCall({
-        target: `${PACKAGE_ID}::npc::recruit_npc`,
-        arguments: [
-          coin,
-          tx.pure(randomName, "string"), // Pass random name
-          tx.object("0x6"), // Clock object
-        ],
-      });
+      console.log(`Recruiting ${recruitCount} NPCs...`);
+
+      for (let i = 0; i < recruitCount; i++) {
+          const randomName = generateRandomName();
+          tx.moveCall({
+            target: `${PACKAGE_ID}::npc::recruit_npc`,
+            arguments: [
+              coins[i],
+              tx.pure(randomName, "string"),
+              tx.object("0x6"), // Clock object
+            ],
+          });
+      }
+
       signAndExecute(
         { transactionBlock: tx },
         {
           onSuccess: (result: any) => {
-            console.log("NPC recruited successfully:", result);
+            console.log("Batch recruit successful:", result);
             // Wait a moment for transaction to settle, then reload
             setTimeout(() => {
               setLoading(false);
               onClose();
               if (onSuccess) onSuccess();
-            }, 1500);
+            }, 1500 + (recruitCount * 100)); // Slightly longer delay for batch
           },
           onError: (error: any) => {
             console.error("Recruit error:", error);
@@ -107,13 +117,33 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
           </div>
 
           <div className="bg-gradient-to-br from-[#1a1f2e] to-[#0d1117] border-2 border-[#ffc107] rounded-xl p-4 shadow-[0_0_15px_rgba(255,193,7,0.3)]">
-            <div className="text-[#ffc107] font-bold mb-2 uppercase tracking-wider flex items-center gap-2">
-              <span>💰</span> Recruitment Info
+            <div className="text-[#ffc107] font-bold mb-2 uppercase tracking-wider flex items-center justify-between">
+              <span className="flex items-center gap-2">💰 Recruitment Info</span>
+              <span className="text-white text-xs bg-white/10 px-2 py-0.5 rounded">Batch Mode</span>
             </div>
             <div className="text-white text-sm space-y-1">
-              <div><strong className="text-[#4deeac]">Cost:</strong> 0.1 SUI</div>
+              <div><strong className="text-[#4deeac]">Cost:</strong> 0.1 SUI / NPC</div>
               <div><strong className="text-[#4deeac]">Rarity:</strong> Random (70% Common → 0.1% Mythic)</div>
-              <div><strong className="text-[#4deeac]">Profession:</strong> Random (5 types)</div>
+              
+              <div className="pt-3 border-t border-white/10 mt-2">
+                 <label className="flex items-center justify-between mb-2">
+                     <span className="font-bold text-[#4deeac]">Quantity: {recruitCount}</span>
+                     <span className="text-white font-bold">Total: {(recruitCount * 0.1).toFixed(1)} SUI</span>
+                 </label>
+                 <input 
+                    type="range" 
+                    min="1" 
+                    max="10" 
+                    value={recruitCount}
+                    onChange={(e) => setRecruitCount(Number(e.target.value))}
+                    className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-[#4deeac]"
+                 />
+                 <div className="flex justify-between text-[10px] text-gray-500 mt-1 px-1">
+                     <span>1</span>
+                     <span>5</span>
+                     <span>10</span>
+                 </div>
+              </div>
             </div>
           </div>
 
@@ -122,7 +152,7 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
             disabled={loading}
             className="w-full px-6 py-4 bg-gradient-to-r from-[#4deeac] to-[#3dd69a] hover:from-[#5fffc0] hover:to-[#4deeac] disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-[#0d1117] rounded-xl font-bold uppercase tracking-wider transition-all duration-300 shadow-[0_0_25px_rgba(77,238,172,0.6)] hover:shadow-[0_0_35px_rgba(77,238,172,0.8)] hover:scale-105 disabled:shadow-none transform"
           >
-            {loading ? "Recruiting..." : "👥 Recruit NPC (0.1 SUI)"}
+            {loading ? `Recruiting ${recruitCount} NPCs...` : `👥 Recruit ${recruitCount} NPC${recruitCount > 1 ? 's' : ''} (${(recruitCount * 0.1).toFixed(1)} SUI)`}
           </button>
         </div>
       </div>

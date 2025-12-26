@@ -3,10 +3,11 @@ import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/da
 import { TransactionBlock } from "@mysten/sui.js/transactions";
 import { useQueryClient } from "@tanstack/react-query";
 
-import type { Bunker, NPC, Room } from "../types";
+import type { NPC, Room } from "../types";
 import { NPC_STATUS, PACKAGE_ID, RARITY_NAMES, ROOM_TYPE_NAMES } from "../constants";
 import { queryKeys } from "../query/queryKeys";
-import { useOwnedBunkers, useOwnedNpcs } from "../query/ownedQueries";
+import { useOwnedNpcs } from "../query/ownedQueries";
+import { useBunker } from "../query/singleQueries";
 
 interface RoomDetailModalProps {
   isOpen: boolean;
@@ -22,23 +23,21 @@ export function RoomDetailModal({ isOpen, onClose, bunkerId, roomIndex }: RoomDe
   const queryClient = useQueryClient();
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
 
-  const bunkersQuery = useOwnedBunkers(ownerAddress);
-  const npcsQuery = useOwnedNpcs(ownerAddress);
+  // Use efficient single bunker fetch
+  const { data: bunker, isFetching: isFetchingBunker } = useBunker(bunkerId);
+  // We still need all NPCs to find idle ones, but we can rely on cached data
+  const { data: npcs, isFetching: isFetchingNpcs } = useOwnedNpcs(ownerAddress);
 
   const [selectedNpcId, setSelectedNpcId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
+    // eslint-disable-next-line
     setSelectedNpcId(null);
+    // eslint-disable-next-line
     setLoading(false);
   }, [isOpen, bunkerId, roomIndex]);
-
-  const bunker: Bunker | null = useMemo(() => {
-    const list = bunkersQuery.data ?? [];
-    const match = list.find((b) => (b as any)?.id === bunkerId) as Bunker | undefined;
-    return match ?? (list.length > 0 ? (list[0] as Bunker) : null);
-  }, [bunkersQuery.data, bunkerId]);
 
   const room: Room | null = useMemo(() => {
     if (!bunker) return null;
@@ -69,8 +68,6 @@ export function RoomDetailModal({ isOpen, onClose, bunkerId, roomIndex }: RoomDe
     }
     return null;
   };
-
-  const npcs = npcsQuery.data ?? [];
 
   const assignedHere = useMemo(() => {
     return (npcs || []).filter((npc) => {
@@ -181,8 +178,12 @@ export function RoomDetailModal({ isOpen, onClose, bunkerId, roomIndex }: RoomDe
       signAndExecute(
         { transactionBlock: tx },
         {
-          onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.ownedRoot(ownerAddress) });
+          onSuccess: async () => {
+            alert("NPC assigned!");
+            await Promise.all([
+               queryClient.invalidateQueries({ queryKey: queryKeys.bunker(bunkerId) }),
+               queryClient.invalidateQueries({ queryKey: queryKeys.npcs(ownerAddress) })
+            ]);
             setSelectedNpcId(null);
             setLoading(false);
           },
@@ -212,8 +213,12 @@ export function RoomDetailModal({ isOpen, onClose, bunkerId, roomIndex }: RoomDe
       signAndExecute(
         { transactionBlock: tx },
         {
-          onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.ownedRoot(ownerAddress) });
+          onSuccess: async () => {
+            alert("NPC removed!");
+             await Promise.all([
+               queryClient.invalidateQueries({ queryKey: queryKeys.bunker(bunkerId) }),
+               queryClient.invalidateQueries({ queryKey: queryKeys.npcs(ownerAddress) })
+            ]);
             setLoading(false);
           },
           onError: (error: any) => {
@@ -242,9 +247,10 @@ export function RoomDetailModal({ isOpen, onClose, bunkerId, roomIndex }: RoomDe
       signAndExecute(
         { transactionBlock: tx },
         {
-          onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: queryKeys.ownedRoot(ownerAddress) });
-            setLoading(false);
+          onSuccess: async () => {
+             alert("Room upgraded!");
+             await queryClient.invalidateQueries({ queryKey: queryKeys.bunker(bunkerId) });
+             setLoading(false);
           },
           onError: (error: any) => {
             alert("Upgrade room failed: " + (error?.message ?? String(error)));
@@ -422,7 +428,7 @@ export function RoomDetailModal({ isOpen, onClose, bunkerId, roomIndex }: RoomDe
           </div>
         </div>
 
-        {(bunkersQuery.isFetching || npcsQuery.isFetching) && (
+        {(isFetchingBunker || isFetchingNpcs) && (
           <div className="relative mt-5 text-center text-white/70 text-sm">Syncing...</div>
         )}
       </div>

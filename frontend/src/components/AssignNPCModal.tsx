@@ -1,10 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
-import { getOwnedObjects, getObjectType, getObject } from "../utils/sui";
+import { useQueryClient } from "@tanstack/react-query";
 import type { NPC, Room } from "../types";
 import { NPC_STATUS, RARITY_NAMES } from "../constants";
 import { PACKAGE_ID } from "../constants";
+import { useBunker } from "../query/singleQueries";
+import { useOwnedNpcsEnabled } from "../query/ownedQueries";
+import { queryKeys } from "../query/queryKeys";
 
 interface AssignNPCModalProps {
   isOpen: boolean;
@@ -25,10 +28,24 @@ export function AssignNPCModal({
 }: AssignNPCModalProps) {
   const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
-  const [npcs, setNpcs] = useState<NPC[]>([]);
+  const queryClient = useQueryClient();
+  
   const [selectedNpc, setSelectedNpc] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [powerSufficient, setPowerSufficient] = useState<boolean>(true);
+
+  // Use React Query hooks
+  const { data: bunker } = useBunker(bunkerId);
+  const { data: npcs } = useOwnedNpcsEnabled(
+    account?.address ?? "", 
+    isOpen // Only fetch when open
+  );
+
+  const powerSufficient = useMemo(() => {
+    if (!bunker) return true;
+    const gen = Number((bunker as any).power_generation || 0);
+    const con = Number((bunker as any).power_consumption || 0);
+    return gen >= con;
+  }, [bunker]);
 
   const getAssignedRoomIndex = (npc: NPC): number | null => {
     const v: any = (npc as any).assigned_room;
@@ -41,64 +58,12 @@ export function AssignNPCModal({
     return null;
   };
 
-  useEffect(() => {
-    if (!isOpen || !account?.address) return;
-
-    async function loadNPCs() {
-      try {
-        const npcObjects = await getOwnedObjects(
-          account!.address,
-          getObjectType("npc", "NPC")
-        );
-        setNpcs(npcObjects as NPC[]);
-      } catch (error) {
-        console.error("Error loading NPCs:", error);
-      }
-    }
-
-    async function loadBunkerPower() {
-      try {
-        const bunker = await getObject(bunkerId);
-        if (bunker) {
-          const gen = Number(bunker.power_generation || 0);
-          const con = Number(bunker.power_consumption || 0);
-          setPowerSufficient(gen >= con);
-        }
-      } catch (error) {
-        console.error("Error loading bunker power:", error);
-      }
-    }
-
-    loadNPCs();
-    loadBunkerPower();
-  }, [isOpen, account, bunkerId]);
-
-  const refresh = async () => {
-    if (!account?.address) return;
-    try {
-      const npcObjects = await getOwnedObjects(account.address, getObjectType("npc", "NPC"));
-      setNpcs(npcObjects as NPC[]);
-    } catch (error) {
-      console.error("Error refreshing NPCs:", error);
-    }
-    try {
-      const bunker = await getObject(bunkerId);
-      if (bunker) {
-        const gen = Number(bunker.power_generation || 0);
-        const con = Number(bunker.power_consumption || 0);
-        setPowerSufficient(gen >= con);
-      }
-    } catch (error) {
-      console.error("Error refreshing bunker power:", error);
-    }
-  };
-
-  const assignedHere = (npcs || []).filter((npc) => {
+  const assignedHere = useMemo(() => (npcs || []).filter((npc) => {
     const assignedRoomIndex = getAssignedRoomIndex(npc);
     return npc.status === NPC_STATUS.WORKING && assignedRoomIndex === roomIndex;
-  });
+  }), [npcs, roomIndex]);
 
-  const idleNPCs = (npcs || []).filter((npc) => npc.status === NPC_STATUS.IDLE);
+  const idleNPCs = useMemo(() => (npcs || []).filter((npc) => npc.status === NPC_STATUS.IDLE), [npcs]);
 
   const handleAssign = async () => {
     if (!account?.address || !selectedNpc) return;
@@ -122,9 +87,14 @@ export function AssignNPCModal({
       signAndExecute(
         { transactionBlock: tx },
         {
-          onSuccess: () => {
+          onSuccess: async () => {
             alert("NPC assigned to room!");
-            refresh();
+            // Invalidate specifically the bunker and the NPC list
+            // We await these so the UI updates before success
+            await Promise.all([
+               queryClient.invalidateQueries({ queryKey: queryKeys.bunker(bunkerId) }),
+               queryClient.invalidateQueries({ queryKey: queryKeys.npcs(account.address) })
+            ]);
             onSuccess();
           },
           onError: (error: any) => {
@@ -158,9 +128,12 @@ export function AssignNPCModal({
       signAndExecute(
         { transactionBlock: tx },
         {
-          onSuccess: () => {
+          onSuccess: async () => {
             alert("NPC removed from room!");
-            refresh();
+            await Promise.all([
+               queryClient.invalidateQueries({ queryKey: queryKeys.bunker(bunkerId) }),
+               queryClient.invalidateQueries({ queryKey: queryKeys.npcs(account.address) })
+            ]);
             onSuccess();
           },
           onError: (error: any) => {

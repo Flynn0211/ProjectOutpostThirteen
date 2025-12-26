@@ -29,6 +29,7 @@ function App() {
 
   useEffect(() => {
     console.log("App mounted");
+    // eslint-disable-next-line
     setMounted(true);
   }, []);
 

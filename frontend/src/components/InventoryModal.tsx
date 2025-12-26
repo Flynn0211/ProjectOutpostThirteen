@@ -6,7 +6,10 @@ import type { Blueprint, Item } from "../types";
 import { getBlueprintImageUrl, getItemImageUrl } from "../utils/imageUtils";
 import { ITEM_TYPES, NPC_STATUS, PACKAGE_ID, RARITY_NAMES } from "../constants";
 import { useMarketplace } from "../hooks/useMarketplace";
+import { useTransaction } from "../hooks/useTransaction";
 import { useInventory } from "../hooks/useInventory";
+import { useNpcEquipment } from "../hooks/useNpcEquipment";
+import { NpcListWithEquipment } from "./NpcListWithEquipment";
 
 type InventoryEntry =
   | { kind: "item"; id: string; item: Item }
@@ -20,14 +23,18 @@ interface TooltipData {
 interface InventoryModalProps {
   isOpen: boolean;
   onClose: () => void;
+  initialSelectedNpcId?: string;
 }
 
-export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
+export function InventoryModal({ isOpen, onClose, initialSelectedNpcId }: InventoryModalProps) {
   const account = useCurrentAccount();
-  const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
+  const { mutate: signAndExecute } = useTransaction();
   const { listItem } = useMarketplace();
   const [selectedNpcId, setSelectedNpcId] = useState<string>("");
   const [actionLoadingItemId, setActionLoadingItemId] = useState<string | null>(null);
+
+  // Fetch equipment for the selected NPC to check slot availability
+  const { equipment: selectedNpcEquipment } = useNpcEquipment(selectedNpcId);
 
   // Tooltip state
   const [tooltipData, setTooltipData] = useState<TooltipData | null>(null);
@@ -67,17 +74,20 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
   };
 
   // Shared inventory hook
-  const { items, blueprints, npcs, loading, refresh: refreshInventory } = useInventory(isOpen);
+  const { items, blueprints, npcs, loading, refresh: refreshInventory, removeItem } = useInventory(isOpen);
 
   useEffect(() => {
-    // Select first NPC if available and none selected
-    if (npcs.length > 0 && !selectedNpcId) {
+    if (isOpen && initialSelectedNpcId) {
+        setSelectedNpcId(initialSelectedNpcId);
+    }
+    // Select first NPC if available and none selected (and no initial passed)
+    else if (npcs.length > 0 && !selectedNpcId) {
         setSelectedNpcId(npcs[0].id);
     } else if (selectedNpcId && !npcs.find(n => n.id === selectedNpcId)) {
         // If selected NPC is gone (e.g. sold or error), select first available or empty
         setSelectedNpcId(npcs.length > 0 ? npcs[0].id : "");
     }
-  }, [npcs, selectedNpcId]);
+  }, [npcs, selectedNpcId, isOpen, initialSelectedNpcId]);
 
   const selectedNpc = npcs.find((n) => n.id === selectedNpcId) ?? null;
 
@@ -159,6 +169,47 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
     }
   };
 
+  const handleEquip = async (item: Item) => {
+    if (!account?.address || !selectedNpc?.id) return;
+    setActionLoadingItemId(item.id);
+    
+    try {
+        const tx = new TransactionBlock();
+        const npcArg = tx.object(selectedNpc.id);
+        const itemArg = tx.object(item.id);
+        const clockArg = tx.object("0x6");
+
+        tx.moveCall({
+            target: `${PACKAGE_ID}::npc::equip_item`,
+            arguments: [npcArg, itemArg, clockArg]
+        });
+
+        signAndExecute({ transactionBlock: tx }, {
+            onSuccess: () => {
+                // Optimistic Update: Immediately remove item and clear loading
+                removeItem(item.id);
+                setActionLoadingItemId(null);
+                setTooltipData(null); // Close tooltip
+
+                // Background refresh for consistency
+                setTimeout(() => {
+                    refreshInventory();
+                     window.dispatchEvent(new Event("inventory-updated"));
+                }, 1000);
+            },
+            onError: (err: any) => {
+                console.error(err);
+                alert("Equip failed: " + (err?.message ?? String(err)));
+                setActionLoadingItemId(null);
+            }
+        });
+    } catch (e: any) {
+        console.error(e);
+        alert("Equip failed: " + (e?.message ?? String(e)));
+        setActionLoadingItemId(null);
+    }
+  };
+
   // List Item Logic
   const [listingPrice, setListingPrice] = useState<string>("");
   const [isListingMode, setIsListingMode] = useState(false);
@@ -224,28 +275,24 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
           <div className="relative mb-6">
             <div className="bg-[#1a1f2e] border-2 border-[#4deeac] rounded-xl p-4">
               <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="text-white text-sm">
-                  <div className="font-bold text-[#4deeac] uppercase tracking-wider">Use on NPC</div>
-                  <div className="text-xs text-white/70">Select an NPC to use consumables from inventory</div>
+                <div className="text-white text-sm w-full">
+                  <div className="font-bold text-[#4deeac] uppercase tracking-wider mb-2">Use on NPC</div>
+                  
+                  {loading ? (
+                    <div className="text-white/70 text-sm">Loading NPCs...</div>
+                  ) : npcs.length === 0 ? (
+                    <div className="text-white/70 text-sm">No NPCs owned</div>
+                  ) : (
+                    <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+                      {/* We need to fetch equipment for all these NPCs to display icons */}
+                      <NpcListWithEquipment 
+                          npcs={npcs} 
+                          selectedNpcId={selectedNpcId} 
+                          onSelect={setSelectedNpcId} 
+                      />
+                    </div>
+                  )}
                 </div>
-
-                {loading ? (
-                  <div className="text-white/70 text-sm">Loading NPCs...</div>
-                ) : npcs.length === 0 ? (
-                  <div className="text-white/70 text-sm">No NPCs owned</div>
-                ) : (
-                  <select
-                    value={selectedNpcId}
-                    onChange={(e) => setSelectedNpcId(e.target.value)}
-                    className="bg-[#0d1117] text-white border border-[#4deeac] rounded px-3 py-2 text-sm"
-                  >
-                    {npcs.map((n) => (
-                      <option key={n.id} value={n.id}>
-                        {n.name} (Lv {n.level})
-                      </option>
-                    ))}
-                  </select>
-                )}
               </div>
 
               {selectedNpc ? (
@@ -322,7 +369,24 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
             const canUse = isItem && isConsumable(entry.item.item_type) && !!selectedNpc && 
               !(entry.item.item_type === ITEM_TYPES.REVIVAL_POTION && selectedNpc.status !== NPC_STATUS.KNOCKED);
               
+            const isEquipable = isItem && (
+                entry.item.item_type === ITEM_TYPES.WEAPON || 
+                entry.item.item_type === ITEM_TYPES.ARMOR || 
+                entry.item.item_type === ITEM_TYPES.TOOL
+            );
+            
+            // Check if slot is occupied
+            let slotOccupied = false;
+            if (isEquipable && selectedNpcEquipment) {
+                if (entry.item.item_type === ITEM_TYPES.WEAPON && selectedNpcEquipment.weapon) slotOccupied = true;
+                if (entry.item.item_type === ITEM_TYPES.ARMOR && selectedNpcEquipment.armor) slotOccupied = true;
+                if (entry.item.item_type === ITEM_TYPES.TOOL && selectedNpcEquipment.tool1 && selectedNpcEquipment.tool2) slotOccupied = true;
+            }
+
+            const canEquip = isEquipable && !!selectedNpc && selectedNpc.status === NPC_STATUS.IDLE && !slotOccupied;
+
             const useDisabled = !canUse || !!actionLoadingItemId || (isItem && actionLoadingItemId === entry.item.id);
+            const equipDisabled = !canEquip || !!actionLoadingItemId || (isItem && actionLoadingItemId === entry.item.id);
 
             const style: React.CSSProperties = {
               top: rect.top - 8,
@@ -374,6 +438,31 @@ export function InventoryModal({ isOpen, onClose }: InventoryModalProps) {
                             >
                               {actionLoadingItemId === entry.item.id ? "Đang dùng..." : "Dùng"}
                             </button>
+                          </div>
+                        ) : null}
+
+                        {isEquipable ? (
+                          <div className="pt-2">
+                             <button
+                               onClick={(e) => {
+                                 e.preventDefault();
+                                 e.stopPropagation();
+                                 if (!equipDisabled) handleEquip(entry.item);
+                               }}
+                               disabled={equipDisabled}
+                               className={`w-full px-3 py-2 rounded text-xs font-bold transition-all ${
+                                 equipDisabled
+                                   ? "bg-gray-700 text-gray-300 cursor-not-allowed"
+                                   : "bg-[#4deeac] text-[#0d1117] hover:bg-[#5fffc0]"
+                               }`}
+                               title={
+                                   !selectedNpc ? "Chọn NPC trước" : 
+                                   selectedNpc.status !== NPC_STATUS.IDLE ? "NPC must be Idle" : 
+                                   slotOccupied ? "Slot already occupied" : ""
+                               }
+                             >
+                               {actionLoadingItemId === entry.item.id ? "Equipping..." : slotOccupied ? "Slot Full" : "Equip"}
+                             </button>
                           </div>
                         ) : null}
                       </div>

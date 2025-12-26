@@ -187,8 +187,7 @@ export function MarketplaceModal({ isOpen, onClose }: MarketplaceModalProps) {
       <div className="relative bg-gradient-to-br from-[#2a3447] via-[#1f2937] to-[#1a1f2e] border-[3px] border-[#4deeac] rounded-2xl p-8 max-w-6xl w-full max-h-[80vh] flex flex-col overflow-hidden shadow-[0_0_50px_rgba(77,238,172,0.7),0_20px_80px_rgba(0,0,0,0.8)] transform transition-all duration-300">
         
         {/* ... Header ... */}
-        <div className="absolute top-0 left-0 w-20 h-20 border-t-4 border-l-4 border-[#5fffc0] rounded-tl-2xl pointer-events-none" />
-        <div className="absolute bottom-0 right-0 w-20 h-20 border-b-4 border-r-4 border-[#5fffc0] rounded-br-2xl pointer-events-none" />
+
         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-[#4deeac]/5 to-transparent animate-shimmer pointer-events-none" />
 
         <div className="relative z-10 flex justify-between items-center mb-6 shrink-0">

@@ -1,15 +1,19 @@
 import { useState, useEffect } from "react";
-import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
+import { useCurrentAccount } from "@mysten/dapp-kit";
+import { useTransaction } from "../hooks/useTransaction";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
 import { getOwnedObjects, getObjectType } from "../utils/sui";
 import type { Item, NPC, Bunker } from "../types";
 import { getNPCSpriteUrl } from "../utils/imageUtils";
 import { SpriteSheet } from "./SpriteSheet";
 import { ITEM_TYPES, NPC_STATUS, PACKAGE_ID, RARITY_NAMES, NPC_PROFESSION_NAMES } from "../constants";
+import { useNpcEquipment } from "../hooks/useNpcEquipment";
+import { getItemImageUrl } from "../utils/imageUtils";
 
 interface NPCManagerModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenInventory: (npcId: string) => void;
 }
 
 const NPC_STATUS_NAMES = {
@@ -19,9 +23,9 @@ const NPC_STATUS_NAMES = {
   [3]: "Working",
 };
 
-export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
+export function NPCManagerModal({ isOpen, onClose, onOpenInventory }: NPCManagerModalProps) {
   const account = useCurrentAccount();
-  const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
+  const { mutate: signAndExecute } = useTransaction();
   const [npcs, setNpcs] = useState<NPC[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedNpc, setSelectedNpc] = useState<NPC | null>(null);
@@ -31,6 +35,53 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
   const [itemsLoading, setItemsLoading] = useState(false);
   const [actionLoadingItemId, setActionLoadingItemId] = useState<string | null>(null);
   const [selectedNpcFrameCount, setSelectedNpcFrameCount] = useState<number | undefined>(undefined);
+
+  const { equipment, loading: equipmentLoading, refresh: refreshEquipment } = useNpcEquipment(selectedNpc?.id || null);
+
+  const handleUnequip = async (slotType: "weapon" | "armor" | "tool1" | "tool2") => {
+      if (!account?.address || !selectedNpc?.id) return;
+      setActionLoadingItemId("unequip-" + slotType);
+
+      try {
+          const tx = new TransactionBlock();
+          const npcArg = tx.object(selectedNpc.id);
+          const clockArg = tx.object("0x6");
+          
+          let target = "";
+          if (slotType === "weapon") target = `${PACKAGE_ID}::npc::unequip_weapon`;
+          else if (slotType === "armor") target = `${PACKAGE_ID}::npc::unequip_armor`;
+          else if (slotType === "tool1") target = `${PACKAGE_ID}::npc::unequip_tool_1`;
+          else if (slotType === "tool2") target = `${PACKAGE_ID}::npc::unequip_tool_2`;
+
+          tx.moveCall({
+              target: target as any,
+              arguments: [npcArg, clockArg],
+          });
+
+          signAndExecute({ transactionBlock: tx }, {
+              onSuccess: () => {
+                  setTimeout(() => {
+                      refreshEquipment();
+                      // Refresh items in inventory because unequipped item goes there
+                      window.dispatchEvent(new Event("inventory-updated"));
+                  }, 1200);
+              },
+              onError: (err) => {
+                  console.error(err);
+                  alert("Unequip failed");
+                  setActionLoadingItemId(null);
+              }
+          });
+      } catch (e) {
+          console.error(e);
+          setActionLoadingItemId(null);
+      } finally {
+        // loading state cleared in onError/onSuccess or manually here if needed
+        // but we rely on async flow. Actually better to clear it in finally block if we await, 
+        // but signAndExecute is callback based. 
+        // So we clear it in callbacks.
+      }
+  };
 
   useEffect(() => {
     if (!isOpen || !account?.address) return;
@@ -274,12 +325,47 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
         ) : npcs.length === 0 ? (
           <div className="text-gray-400 text-center py-8">No NPCs owned</div>
         ) : (
-          <div className="grid grid-cols-2 gap-6">
+
+          <div className="grid grid-cols-2 gap-6 min-h-[500px]">
             {/* NPC List */}
-            <div>
-              <h3 className="text-xl font-bold text-white mb-4">Your NPCs</h3>
-              <div className="space-y-2 max-h-96 overflow-y-auto">
-                {npcs.map((npc) => (
+            <div className="flex flex-col h-full max-h-[80vh] bg-gray-900/40 rounded-xl p-4 border border-gray-700/50">
+              <h3 className="text-lg font-bold text-[#4deeac] mb-3 uppercase tracking-wider flex items-center gap-2">
+                <span>👥</span> Your NPCs
+              </h3>
+              <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-2 pr-2 scrollbar-thin scrollbar-thumb-gray-600 scrollbar-track-transparent">
+                {npcs.map((npc) => {
+                  const isSelected = selectedNpc?.id === npc.id;
+                  
+                  // Status-based styling
+                  let statusColor = "text-gray-400";
+                  let statusBg = "bg-gray-800";
+                  let statusBorder = "border-transparent";
+
+                  switch (npc.status) {
+                    case NPC_STATUS.WORKING:
+                      statusColor = "text-yellow-400";
+                      statusBg = isSelected ? "bg-yellow-900/40" : "bg-yellow-900/10";
+                      statusBorder = isSelected ? "border-yellow-400" : "border-yellow-600/30";
+                      break;
+                    case NPC_STATUS.ON_MISSION:
+                      statusColor = "text-blue-400";
+                      statusBg = isSelected ? "bg-blue-900/40" : "bg-blue-900/10";
+                      statusBorder = isSelected ? "border-blue-400" : "border-blue-600/30";
+                      break;
+                    case NPC_STATUS.KNOCKED:
+                      statusColor = "text-red-400";
+                      statusBg = isSelected ? "bg-red-900/40" : "bg-red-900/10";
+                      statusBorder = isSelected ? "border-red-400" : "border-red-600/30";
+                      break;
+                    case NPC_STATUS.IDLE:
+                    default:
+                      statusColor = "text-green-400";
+                      statusBg = isSelected ? "bg-green-900/40" : "bg-gray-800";
+                      statusBorder = isSelected ? "border-green-400" : "border-gray-700";
+                      break;
+                  }
+
+                  return (
                   <div
                     key={npc.id || Math.random()}
                     onClick={() => {
@@ -287,33 +373,59 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
                       setSelectedNpcFrameCount(undefined);
                       setSelectedNpc(npc);
                     }}
-                    className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                      selectedNpc?.id === npc.id
-                        ? "bg-blue-600 border-2 border-blue-400"
-                        : "bg-gray-700 hover:bg-gray-600"
-                    }`}
+                    className={`
+                      relative p-3 rounded-lg cursor-pointer transition-all border-2
+                      flex items-center gap-3 overflow-hidden
+                      ${statusBg} ${statusBorder}
+                      ${isSelected ? "shadow-[0_0_15px_rgba(0,0,0,0.5)] scale-[1.02] z-10" : "hover:border-gray-500 hover:bg-gray-700/80"}
+                    `}
                   >
-                    <div className="text-white">
-                      <div className="font-bold">{npc.name}</div>
-                      <div className="text-xs text-gray-300">
-                        {RARITY_NAMES[npc.rarity as keyof typeof RARITY_NAMES]} · Level {npc.level}
+                     {/* Avatar Thumbnail */}
+                     <div className="relative w-12 h-12 rounded-md bg-gray-900/50 border border-white/10 shrink-0 overflow-hidden">
+                        <div 
+                            className="w-full h-full"
+                            style={{
+                                backgroundImage: `url(${getNPCSpriteUrl(npc.rarity, npc.profession)})`,
+                                backgroundPosition: '0 0',
+                                backgroundSize: 'auto 100%',
+                                backgroundRepeat: 'no-repeat',
+                                imageRendering: 'pixelated'
+                            }}
+                        />
+                     </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                         <div className={`font-bold truncate ${isSelected ? "text-white" : "text-gray-200"}`}>{npc.name}</div>
+                         <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider ${statusColor} bg-black/40 border border-current/20`}>
+                            {NPC_STATUS_NAMES[npc.status as keyof typeof NPC_STATUS_NAMES]}
+                         </div>
                       </div>
-                      <div className="text-xs mt-1 text-gray-400">
-                        Status: {NPC_STATUS_NAMES[npc.status as keyof typeof NPC_STATUS_NAMES] || "Unknown"}
+                      
+                      <div className="text-xs text-gray-400 mt-1 flex items-center gap-2">
+                         <span className={RARITY_NAMES[npc.rarity as keyof typeof RARITY_NAMES] === "Legendary" ? "text-orange-400" : "text-gray-500"}>
+                            {RARITY_NAMES[npc.rarity as keyof typeof RARITY_NAMES]}
+                         </span>
+                         <span className="w-1 h-1 rounded-full bg-gray-600" />
+                         <span className="text-gray-500">Lvl {npc.level}</span>
+                         <span className="w-1 h-1 rounded-full bg-gray-600" />
+                         <span className="text-gray-300">{NPC_PROFESSION_NAMES[npc.profession as keyof typeof NPC_PROFESSION_NAMES]}</span>
                       </div>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             </div>
 
             {/* NPC Details */}
             {selectedNpc ? (
-              <div>
-                <h3 className="text-xl font-bold text-white mb-4">Details</h3>
-                <div className="bg-gray-700 rounded-lg p-4 space-y-4">
-                  <div className="w-44 h-44 bg-gray-800 rounded-lg border border-gray-600 mx-auto flex items-center justify-center overflow-hidden">
-                    <div style={{ transform: "scale(1.35)", transformOrigin: "center" }}>
+              <div className="flex flex-col h-full bg-gray-900/40 rounded-xl p-4 border border-gray-700/50">
+                <h3 className="text-lg font-bold text-[#4deeac] mb-3 uppercase tracking-wider flex items-center gap-2">
+                  <span>📝</span> Details
+                </h3>
+                <div className="space-y-3">
+                  <div className="w-full bg-gray-800/80 rounded-lg border border-gray-600/50 h-40 flex items-center justify-center relative">
+                    <div style={{ transform: "scale(1.2)", transformOrigin: "center" }}>
                       <SpriteSheet
                         src={getNPCSpriteUrl(selectedNpc.rarity, selectedNpc.profession)}
                         frameWidth={128}
@@ -332,7 +444,7 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
                        <div className="text-xl font-bold">{selectedNpc.name}</div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div className="grid grid-cols-2 gap-1 text-sm">
                       <div>
                         <span className="text-gray-400">Rarity:</span>
                         <span className="ml-2 font-bold">
@@ -412,6 +524,115 @@ export function NPCManagerModal({ isOpen, onClose }: NPCManagerModalProps) {
                           />
                         </div>
                       </div>
+
+                    <div className="border-t border-gray-600 pt-2">
+                       <div className="text-sm font-bold text-gray-300 mb-2">Equipment</div>
+                       {equipmentLoading ? (
+                          <div className="text-xs text-gray-400">Loading equipment...</div>
+                       ) : (
+                          <div className="grid grid-cols-4 gap-2">
+                             {/* Weapon */}
+                             <div className="flex flex-col items-center">
+                                <div className={`relative w-12 h-12 bg-gray-800 border ${equipment.weapon ? "border-" + RARITY_NAMES[equipment.weapon.rarity as keyof typeof RARITY_NAMES]?.toLowerCase() + "-400" : "border-gray-600 border-dashed"} rounded-lg flex items-center justify-center`}>
+                                   {equipment.weapon ? (
+                                      <>
+                                        <img src={getItemImageUrl(equipment.weapon.item_type, equipment.weapon.rarity)} className="w-8 h-8 object-contain" />
+                                        <button 
+                                          onClick={() => handleUnequip("weapon")}
+                                          disabled={!!actionLoadingItemId}
+                                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center hover:bg-red-600"
+                                        >
+                                          ×
+                                        </button>
+                                      </>
+                                   ) : (
+                                       <button 
+                                        onClick={() => selectedNpc && onOpenInventory(selectedNpc.id)}
+                                        className="w-full h-full flex items-center justify-center text-gray-600 text-[10px] hover:text-[#4deeac] hover:bg-white/5 transition-all"
+                                      >
+                                        WPN
+                                      </button>
+                                   )}
+                                </div>
+                             </div>
+
+                             {/* Armor */}
+                             <div className="flex flex-col items-center">
+                                <div className={`relative w-12 h-12 bg-gray-800 border ${equipment.armor ? "border-" + RARITY_NAMES[equipment.armor.rarity as keyof typeof RARITY_NAMES]?.toLowerCase() + "-400" : "border-gray-600 border-dashed"} rounded-lg flex items-center justify-center`}>
+                                   {equipment.armor ? (
+                                      <>
+                                        <img src={getItemImageUrl(equipment.armor.item_type, equipment.armor.rarity)} className="w-8 h-8 object-contain" />
+                                        <button 
+                                          onClick={() => handleUnequip("armor")}
+                                          disabled={!!actionLoadingItemId}
+                                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center hover:bg-red-600"
+                                        >
+                                          ×
+                                        </button>
+                                      </>
+                                   ) : (
+                                       <button 
+                                        onClick={() => selectedNpc && onOpenInventory(selectedNpc.id)}
+                                        className="w-full h-full flex items-center justify-center text-gray-600 text-[10px] hover:text-[#4deeac] hover:bg-white/5 transition-all"
+                                      >
+                                        ARM
+                                      </button>
+                                   )}
+                                </div>
+                             </div>
+
+                             {/* Tool 1 */}
+                             <div className="flex flex-col items-center">
+                                <div className={`relative w-12 h-12 bg-gray-800 border ${equipment.tool1 ? "border-" + RARITY_NAMES[equipment.tool1.rarity as keyof typeof RARITY_NAMES]?.toLowerCase() + "-400" : "border-gray-600 border-dashed"} rounded-lg flex items-center justify-center`}>
+                                   {equipment.tool1 ? (
+                                      <>
+                                        <img src={getItemImageUrl(equipment.tool1.item_type, equipment.tool1.rarity)} className="w-8 h-8 object-contain" />
+                                        <button 
+                                          onClick={() => handleUnequip("tool1")}
+                                          disabled={!!actionLoadingItemId}
+                                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center hover:bg-red-600"
+                                        >
+                                          ×
+                                        </button>
+                                      </>
+                                   ) : (
+                                       <button 
+                                        onClick={() => selectedNpc && onOpenInventory(selectedNpc.id)}
+                                        className="w-full h-full flex items-center justify-center text-gray-600 text-[10px] hover:text-[#4deeac] hover:bg-white/5 transition-all"
+                                      >
+                                        TL1
+                                      </button>
+                                   )}
+                                </div>
+                             </div>
+
+                              {/* Tool 2 */}
+                             <div className="flex flex-col items-center">
+                                <div className={`relative w-12 h-12 bg-gray-800 border ${equipment.tool2 ? "border-" + RARITY_NAMES[equipment.tool2.rarity as keyof typeof RARITY_NAMES]?.toLowerCase() + "-400" : "border-gray-600 border-dashed"} rounded-lg flex items-center justify-center`}>
+                                   {equipment.tool2 ? (
+                                      <>
+                                        <img src={getItemImageUrl(equipment.tool2.item_type, equipment.tool2.rarity)} className="w-8 h-8 object-contain" />
+                                        <button 
+                                          onClick={() => handleUnequip("tool2")}
+                                          disabled={!!actionLoadingItemId}
+                                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center hover:bg-red-600"
+                                        >
+                                          ×
+                                        </button>
+                                      </>
+                                   ) : (
+                                      <button 
+                                        onClick={() => selectedNpc && onOpenInventory(selectedNpc.id)}
+                                        className="w-full h-full flex items-center justify-center text-gray-600 text-[10px] hover:text-[#4deeac] hover:bg-white/5 transition-all"
+                                      >
+                                        TL2
+                                      </button>
+                                   )}
+                                </div>
+                             </div>
+                          </div>
+                       )}
+                    </div>
                     </div>
 
 

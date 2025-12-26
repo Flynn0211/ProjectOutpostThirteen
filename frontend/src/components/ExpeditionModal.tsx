@@ -222,9 +222,8 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md animate-fadeInScale">
-      <div className="relative bg-gradient-to-br from-[#2a3447] via-[#1f2937] to-[#1a1f2e] border-[3px] border-[#4deeac] rounded-2xl p-8 max-w-3xl w-full max-h-[85vh] overflow-y-auto shadow-[0_0_50px_rgba(77,238,172,0.7),0_20px_80px_rgba(0,0,0,0.8)] transform transition-all duration-300">
-        <div className="absolute top-0 left-0 w-20 h-20 border-t-4 border-l-4 border-[#5fffc0] rounded-tl-2xl" />
-        <div className="absolute bottom-0 right-0 w-20 h-20 border-b-4 border-r-4 border-[#5fffc0] rounded-br-2xl" />
+      <div className="relative bg-gradient-to-br from-[#2a3447] via-[#1f2937] to-[#1a1f2e] border-[3px] border-[#4deeac] rounded-2xl p-8 max-w-3xl w-full max-h-[85vh] overflow-y-auto overflow-x-hidden shadow-[0_0_50px_rgba(77,238,172,0.7),0_20px_80px_rgba(0,0,0,0.8)] transform transition-all duration-300">
+
 
         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-[#4deeac]/5 to-transparent animate-shimmer" />
 
@@ -301,7 +300,7 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
                 No available NPCs (must be IDLE and not already on expedition)
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+              <div className="grid grid-cols-3 gap-4 max-h-96 overflow-y-auto overflow-x-hidden">
                 {availableNpcs.map((npc) => (
                   <div
                     key={npc.id}

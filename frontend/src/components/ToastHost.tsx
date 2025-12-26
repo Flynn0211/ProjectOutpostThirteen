@@ -89,6 +89,29 @@ export function ToastHost() {
     return () => window.clearInterval(interval);
   }, [canRun, ownerAddress]);
 
+  // Listen for custom toast events
+  useEffect(() => {
+    function handleCustomToast(e: Event) {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || !detail.title) return;
+
+      const toast: Toast = {
+        id: Math.random().toString(36).slice(2),
+        title: detail.title,
+        body: detail.body || "",
+      };
+
+      setToasts((prev) => [toast, ...prev].slice(0, 5));
+      
+      window.setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== toast.id));
+      }, TOAST_LIFETIME_MS);
+    }
+
+    window.addEventListener("show-toast", handleCustomToast as EventListener);
+    return () => window.removeEventListener("show-toast", handleCustomToast as EventListener);
+  }, []);
+
   if (!canRun || toasts.length === 0) return null;
 
   return (

@@ -7,6 +7,7 @@ import { Toolbar } from "./components/Toolbar";
 import { ToastHost } from "./components/ToastHost";
 import { NotificationLogModal } from "./components/NotificationLogModal";
 import { RoomDetailModal } from "./components/RoomDetailModal";
+import { BalanceDisplay } from "./components/BalanceDisplay";
 
 type ToolbarTab =
   | "inventory"
@@ -92,7 +93,8 @@ function App() {
         />
       )}
       <ToastHost />
-      <div className="absolute top-4 right-4 z-50">
+      <div className="absolute top-4 right-4 z-50 flex items-center gap-3">
+        <BalanceDisplay />
         <WalletButton />
       </div>
     </div>

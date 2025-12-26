@@ -51,6 +51,7 @@ export function useInventory(isOpen: boolean = true) {
         npcs,
         blueprints,
         loading,
-        refresh: fetchInventory
+        refresh: fetchInventory,
+        removeItem: (id: string) => setItems((prev) => prev.filter((i) => i.id !== id))
     };
 }

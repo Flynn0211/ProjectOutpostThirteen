@@ -1,9 +1,12 @@
 import { useState, useEffect } from "react";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
-import { PACKAGE_ID, IMAGES } from "../constants";
+import { useQueryClient } from "@tanstack/react-query";
+import { BUNKER_NPC_LEDGER_ID, PACKAGE_ID, IMAGES } from "../constants";
 import { SpriteSheet } from "./SpriteSheet";
 import { generateRandomName } from "../utils/nameGenerator";
+import { getOwnedObjects, getObjectType } from "../utils/sui";
+import { postTxRefresh } from "../utils/postTxRefresh";
 
 interface RecruitNPCModalProps {
   isOpen: boolean;
@@ -14,8 +17,10 @@ interface RecruitNPCModalProps {
 export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalProps) {
   const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [recruitCount, setRecruitCount] = useState(1);
+  const [bunkerId, setBunkerId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -24,11 +29,40 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
       setRecruitCount(1);
     }
   }, [isOpen]);
+  useEffect(() => {
+    if (!isOpen || !account?.address) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const bunkers = await getOwnedObjects(account.address, getObjectType("bunker", "Bunker"));
+        const first = (bunkers as any[]).find((b) => !!b && !!(b as any).id);
+        if (!cancelled) setBunkerId(first?.id ?? null);
+      } catch (e) {
+        console.error("Error loading bunker for recruit:", e);
+        if (!cancelled) setBunkerId(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, account?.address]);
 
   const sampleNPCs = IMAGES.npc.slice(0, 6);
 
   const handleRecruit = async () => {
     if (!account?.address) return;
+
+    if (!bunkerId) {
+      alert("You need a Bunker before recruiting NPCs.");
+      return;
+    }
+
+    if (!BUNKER_NPC_LEDGER_ID) {
+      alert("Missing config: VITE_BUNKER_NPC_LEDGER_ID");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -45,6 +79,8 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
           tx.moveCall({
             target: `${PACKAGE_ID}::npc::recruit_npc`,
             arguments: [
+              tx.object(bunkerId),
+              tx.object(BUNKER_NPC_LEDGER_ID),
               coins[i],
               tx.pure(randomName, "string"),
               tx.object("0x6"), // Clock object
@@ -59,6 +95,10 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
             console.log("Batch recruit successful:", result);
             // Wait a moment for transaction to settle, then reload
             setTimeout(() => {
+              if (account?.address) {
+                postTxRefresh(queryClient, account.address);
+                window.setTimeout(() => postTxRefresh(queryClient, account.address!), 1200);
+              }
               setLoading(false);
               onClose();
               if (onSuccess) onSuccess();
@@ -97,7 +137,7 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
             onClick={onClose}
             className="text-[#4deeac] hover:text-[#5fffc0] text-4xl font-bold transition-all duration-200 hover:rotate-90 hover:scale-110"
           >
-            ×
+            Ãƒâ€”
           </button>
         </div>
 
@@ -116,12 +156,12 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
 
           <div className="bg-gradient-to-br from-[#1a1f2e] to-[#0d1117] border-2 border-[#ffc107] rounded-xl p-4 shadow-[0_0_15px_rgba(255,193,7,0.3)]">
             <div className="text-[#ffc107] font-bold mb-2 uppercase tracking-wider flex items-center justify-between">
-              <span className="flex items-center gap-2">💰 Recruitment Info</span>
+              <span className="flex items-center gap-2">Ã°Å¸â€™Â° Recruitment Info</span>
               <span className="text-white text-xs bg-white/10 px-2 py-0.5 rounded">Batch Mode</span>
             </div>
             <div className="text-white text-sm space-y-1">
               <div><strong className="text-[#4deeac]">Cost:</strong> 0.1 SUI / NPC</div>
-              <div><strong className="text-[#4deeac]">Rarity:</strong> Random (70% Common → 0.1% Mythic)</div>
+              <div><strong className="text-[#4deeac]">Rarity:</strong> Random (70% Common Ã¢â€ â€™ 0.1% Mythic)</div>
               
               <div className="pt-3 border-t border-white/10 mt-2">
                  <label className="flex items-center justify-between mb-2">
@@ -150,7 +190,7 @@ export function RecruitNPCModal({ isOpen, onClose, onSuccess }: RecruitNPCModalP
             disabled={loading}
             className="w-full px-6 py-4 bg-gradient-to-r from-[#4deeac] to-[#3dd69a] hover:from-[#5fffc0] hover:to-[#4deeac] disabled:from-gray-600 disabled:to-gray-700 disabled:cursor-not-allowed text-[#0d1117] rounded-xl font-bold uppercase tracking-wider transition-all duration-300 shadow-[0_0_25px_rgba(77,238,172,0.6)] hover:shadow-[0_0_35px_rgba(77,238,172,0.8)] hover:scale-105 disabled:shadow-none transform"
           >
-            {loading ? `Recruiting ${recruitCount} NPCs...` : `👥 Recruit ${recruitCount} NPC${recruitCount > 1 ? 's' : ''} (${(recruitCount * 0.1).toFixed(1)} SUI)`}
+            {loading ? `Recruiting ${recruitCount} NPCs...` : `Ã°Å¸â€˜Â¥ Recruit ${recruitCount} NPC${recruitCount > 1 ? 's' : ''} (${(recruitCount * 0.1).toFixed(1)} SUI)`}
           </button>
         </div>
       </div>

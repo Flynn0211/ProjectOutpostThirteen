@@ -24,6 +24,21 @@ export function NPCComponent({
   patrolDelaySeconds = 0,
 }: NPCProps) {
   const spriteUrl = getNPCSpriteUrl(npc.rarity, npc.profession);
+
+  // Support sprite naming conventions:
+  // - "idle*" => never moves
+  // - "walk*" => allowed to move when isWalking=true
+  // This makes behavior deterministic when assets are split into idle/walk sheets.
+  const spriteMode = (() => {
+    const raw = String(spriteUrl ?? "");
+    const last = raw.split(/[/?#]/).filter(Boolean).pop() ?? "";
+    const name = decodeURIComponent(last).toLowerCase();
+    if (name.startsWith("idle")) return "idle" as const;
+    if (name.startsWith("walk")) return "walk" as const;
+    return "unknown" as const;
+  })();
+
+  const effectiveWalking = isWalking && spriteMode !== "idle" && (spriteMode === "walk" || spriteMode === "unknown");
   const frameWidth = 128;
   const frameHeight = 128;
 
@@ -34,12 +49,12 @@ export function NPCComponent({
     top: `${position.y}px`,
     width: `${frameWidth * scale}px`,
     height: `${frameHeight * scale}px`,
-    animationName: isWalking ? "npcPatrol" : "none",
+    animationName: effectiveWalking ? "npcPatrol" : "none",
     animationDuration: `${Math.max(1, patrolDurationSeconds)}s`,
     animationTimingFunction: "linear",
-    animationIterationCount: isWalking ? "infinite" : "1",
+    animationIterationCount: effectiveWalking ? "infinite" : "1",
     animationDelay: `${Math.max(0, patrolDelaySeconds)}s`,
-    ["--npc-patrol-distance" as any]: `${isWalking ? Math.max(0, patrolDistance) : 0}px`,
+    ["--npc-patrol-distance" as any]: `${effectiveWalking ? Math.max(0, patrolDistance) : 0}px`,
   };
 
   const innerStyle: CSSProperties = {
@@ -53,14 +68,14 @@ export function NPCComponent({
   const idleStartFrame = 0;
   const walkStartFrame = has8Frames ? 4 : 0;
 
-  const startFrame = isWalking ? walkStartFrame : idleStartFrame;
-  const rangeFrameCount = isWalking
+  const startFrame = effectiveWalking ? walkStartFrame : idleStartFrame;
+  const rangeFrameCount = effectiveWalking
     ? Math.max(1, Math.min(4, sheetFrameCount ?? 4))
     : has8Frames
       ? 4
       : 1;
 
-  const shouldAnimate = isWalking ? true : has8Frames;
+  const shouldAnimate = effectiveWalking ? true : has8Frames;
 
   return (
     <div className="absolute pointer-events-auto" style={outerStyle}>

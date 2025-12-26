@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { useCurrentAccount } from "@mysten/dapp-kit";
-import { useTransaction } from "../hooks/useTransaction";
+import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
+import { useQueryClient } from "@tanstack/react-query";
 import { getOwnedObjects, getObjectType } from "../utils/sui";
 import type { Item, NPC, Bunker } from "../types";
 import { getNPCSpriteUrl } from "../utils/imageUtils";
@@ -9,6 +9,7 @@ import { SpriteSheet } from "./SpriteSheet";
 import { ITEM_TYPES, NPC_STATUS, PACKAGE_ID, RARITY_NAMES, NPC_PROFESSION_NAMES } from "../constants";
 import { useNpcEquipment } from "../hooks/useNpcEquipment";
 import { getItemImageUrl } from "../utils/imageUtils";
+import { postTxRefresh } from "../utils/postTxRefresh";
 
 interface NPCManagerModalProps {
   isOpen: boolean;
@@ -25,7 +26,8 @@ const NPC_STATUS_NAMES = {
 
 export function NPCManagerModal({ isOpen, onClose, onOpenInventory }: NPCManagerModalProps) {
   const account = useCurrentAccount();
-  const { mutate: signAndExecute } = useTransaction();
+  const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
+  const queryClient = useQueryClient();
   const [npcs, setNpcs] = useState<NPC[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedNpc, setSelectedNpc] = useState<NPC | null>(null);
@@ -190,6 +192,10 @@ export function NPCManagerModal({ isOpen, onClose, onOpenInventory }: NPCManager
         { transactionBlock: tx },
         {
           onSuccess: () => {
+             if (account?.address) {
+               postTxRefresh(queryClient, account.address);
+               window.setTimeout(() => postTxRefresh(queryClient, account.address!), 1200);
+             }
              // Dispatch events to update Bunker Header and NPC list
              window.dispatchEvent(new Event("bunker-updated"));
              window.dispatchEvent(new Event("npcs-updated"));
@@ -264,6 +270,10 @@ export function NPCManagerModal({ isOpen, onClose, onOpenInventory }: NPCManager
         { transactionBlock: tx },
         {
           onSuccess: () => {
+            if (account?.address) {
+              postTxRefresh(queryClient, account.address);
+              window.setTimeout(() => postTxRefresh(queryClient, account.address!), 1200);
+            }
             // Refresh objects after the transaction settles.
             setTimeout(async () => {
               if (!account?.address) return;
@@ -309,7 +319,7 @@ export function NPCManagerModal({ isOpen, onClose, onOpenInventory }: NPCManager
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-gray-800 rounded-lg p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+      <div className="bg-gray-800 rounded-lg p-6 max-w-5xl w-full max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-white">Manage NPCs</h2>
           <button

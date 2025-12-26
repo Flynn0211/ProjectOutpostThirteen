@@ -1,17 +1,34 @@
 // NOTE: These can be overridden in dev/prod via Vite env vars:
 // - VITE_PACKAGE_ID=0x...
 // - VITE_NETWORK=testnet|mainnet
-const DEFAULT_PACKAGE_ID = "0x83604ce2ad428ec414e0061d138ed8e83117d06e9920bb2508dd416bddeb285a";
+// Defaults are set to the current testnet deployment; override in `.env.local` as needed.
+const DEFAULT_PACKAGE_ID = "0x8b3bf7f884ea20f84ada8a084a769321105154473a2c97b64a1c425357a50228";
 const DEFAULT_NETWORK = "testnet" as const;
+const DEFAULT_BUNKER_NPC_LEDGER_ID = "0x7f9e84110395505c81f8c61b89d8dd375fdf9e1a122eb7a0586a6f90c94912c4";
+const DEFAULT_RAID_HISTORY_ID = "0xcde4fcb1bd8d004cfe12c3551fc3527f1cbcd65b5d004d881f50676fadeaed1c";
+const DEFAULT_MARKETPLACE_OBJECT_ID = "0x4a1c4a7c4f5ac798ebd8233bd8189cedc0f01a4b69a4ac96accd5d9eaa13c71f";
 
 export const PACKAGE_ID = (import.meta.env.VITE_PACKAGE_ID as string | undefined) ?? DEFAULT_PACKAGE_ID;
 export const NETWORK = ((import.meta.env.VITE_NETWORK as string | undefined) ?? DEFAULT_NETWORK) as "testnet" | "mainnet";
 
-// Marketplace Shared Object ID (Placeholder - Update with real ID after deployment)
-export const MARKETPLACE_OBJECT_ID = (import.meta.env.VITE_MARKETPLACE_ID as string) ?? "0xce7b686ece61f88ce09357a1016aaa0d4a77c59e7a7c3d986073b02bbf756c25";
+// Shared object id created by `contracts::bunker::init` for `BunkerNpcLedger`.
+// Configure via Vite env var:
+// - VITE_BUNKER_NPC_LEDGER_ID=0x...
+export const BUNKER_NPC_LEDGER_ID =
+  (import.meta.env.VITE_BUNKER_NPC_LEDGER_ID as string | undefined) ?? DEFAULT_BUNKER_NPC_LEDGER_ID;
 
-// Raid History Shared Object ID (Placeholder - Update with real ID after deployment)
-export const RAID_HISTORY_OBJECT_ID = (import.meta.env.VITE_RAID_HISTORY_ID as string) ?? "0x5be34ce9e20c9d7ee24ecb097cd16adf7cc23bbe97d3bcbde28434e53dbaceeb";
+// Marketplace Shared Object ID. Configure via Vite env var:
+// - VITE_MARKETPLACE_ID=0x...
+export const MARKETPLACE_OBJECT_ID =
+  (import.meta.env.VITE_MARKETPLACE_ID as string | undefined) ?? DEFAULT_MARKETPLACE_OBJECT_ID;
+
+// Raid History Shared Object ID. Configure via Vite env var:
+// - VITE_RAID_HISTORY_ID=0x...
+export const RAID_HISTORY_OBJECT_ID =
+  (import.meta.env.VITE_RAID_HISTORY_ID as string | undefined) ?? DEFAULT_RAID_HISTORY_ID;
+
+// Backward-compat alias (older code imports `RAID_HISTORY_ID`).
+export const RAID_HISTORY_ID = RAID_HISTORY_OBJECT_ID;
 
 // Image URLs
 export const IMAGES = {
@@ -206,3 +223,20 @@ export const BASE_PRICES = {
   [RARITY.LEGENDARY]: 200_000_000_000,
   [RARITY.MYTHIC]: 1_000_000_000_000,
 };
+
+// Economy / upgrade costs (must match Move contract constants)
+export const ECONOMY = {
+  BUNKER_UPGRADE_COST_BASE: 100,
+  ROOM_UPGRADE_COST_BASE: 50,
+  ADD_ROOM_COST: 150,
+} as const;
+
+export function getBunkerUpgradeCost(currentBunkerLevel: number): number {
+  const lvl = Number.isFinite(currentBunkerLevel) ? Math.floor(currentBunkerLevel) : 1;
+  return ECONOMY.BUNKER_UPGRADE_COST_BASE * Math.max(1, lvl);
+}
+
+export function getRoomUpgradeCost(currentRoomLevel: number): number {
+  const lvl = Number.isFinite(currentRoomLevel) ? Math.floor(currentRoomLevel) : 1;
+  return ECONOMY.ROOM_UPGRADE_COST_BASE * Math.max(1, lvl);
+}

@@ -1,15 +1,137 @@
-@import url("https://fonts.googleapis.com/css2?family=Roboto+Condensed:wght@400;500;700&display=swap");
+/** @import must precede all other statements */
+@config "../tailwind.config.js";
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Roboto:wght@400;500;700&display=swap");
 @import "tailwindcss";
 
 :root {
-  --fallout-green: #4deeac;
-  --fallout-dark-green: #2d8e68;
-  --fallout-yellow: #ffc107;
-  --fallout-bg: #1a1f2e;
-  --fallout-panel: #2a3447;
-  --fallout-border: #4deeac;
-  --text-bright: #ffffff;
-  --text-dim: #b0c4de;
+  /* Swoosh / shadcn-style HSL tokens */
+  --background: 200 50% 8%;
+  --foreground: 210 40% 98%;
+
+  --card: 200 50% 12%;
+  --card-foreground: 210 40% 98%;
+
+  --popover: 200 50% 12%;
+  --popover-foreground: 210 40% 98%;
+
+  --primary: 39 100% 60%;
+  --primary-foreground: 200 50% 8%;
+
+  --secondary: 120 100% 35%;
+  --secondary-foreground: 200 50% 8%;
+
+  --muted: 200 30% 30%;
+  --muted-foreground: 210 20% 82%;
+
+  --accent: 210 100% 50%;
+  --accent-foreground: 200 50% 8%;
+
+  --destructive: 0 100% 50%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 39 100% 50%;
+  --input: 200 50% 15%;
+  --ring: 39 100% 60%;
+
+  --radius: 0rem;
+
+  --sidebar-background: 200 50% 10%;
+  --sidebar-foreground: 39 100% 60%;
+  --sidebar-primary: 39 100% 60%;
+  --sidebar-primary-foreground: 200 50% 8%;
+  --sidebar-accent: 210 100% 50%;
+  --sidebar-accent-foreground: 200 50% 8%;
+  --sidebar-border: 39 100% 50%;
+  --sidebar-ring: 39 100% 60%;
+
+  --vault-blue: 210 100% 50%;
+  --resource-food: 12 85% 50%;
+  --resource-water: 210 100% 50%;
+  --resource-power: 39 100% 60%;
+  --resource-scrap: 30 50% 40%;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  /* Remove all rounded corners across the UI */
+  *,
+  *::before,
+  *::after {
+    border-radius: 0 !important;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-orbitron font-bold;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  :where(p, span, li, a, button, label, td, th) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  pre,
+  code {
+    overflow-x: auto;
+    white-space: pre;
+    @apply font-mono;
+  }
+
+  @keyframes flicker {
+    0%, 100% {
+      text-shadow: 0 0 10px currentColor, 0 0 20px currentColor;
+    }
+    50% {
+      text-shadow: 0 0 5px currentColor;
+    }
+  }
+}
+
+@layer components {
+  .terminal-border {
+    @apply border-2 border-primary;
+    box-shadow: inset 0 0 10px rgba(255, 185, 0, 0.1);
+  }
+
+  .terminal-glow {
+    @apply text-primary;
+    text-shadow: 0 0 10px rgba(255, 185, 0, 0.5);
+  }
+
+  .vault-card {
+    @apply bg-card border-2 border-primary;
+    box-shadow: 0 0 15px rgba(255, 185, 0, 0.2);
+  }
+
+  .vault-button {
+    @apply bg-primary text-primary-foreground font-orbitron font-bold px-4 py-2 border-2 border-primary uppercase tracking-wider;
+    transition: all 0.2s ease;
+  }
+
+  .vault-button:hover {
+    @apply bg-primary-foreground text-primary;
+    box-shadow: 0 0 20px rgba(255, 185, 0, 0.6);
+  }
+
+  .vault-button:active {
+    transform: scale(0.95);
+  }
+
+  .resource-bar-container {
+    @apply flex items-center gap-2 bg-card px-3 py-2 border border-primary;
+  }
+
+  .glowing-text {
+    animation: flicker 3s infinite;
+  }
 }
 
 * {
@@ -20,12 +142,15 @@
 
 body {
   margin: 0;
-  font-family: "Roboto Condensed", system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background: #0d1117;
-  color: var(--text-bright);
   overflow: hidden;
+
+  /* Theme base */
+  @apply bg-background text-foreground font-orbitron;
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(39, 200, 255, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(255, 185, 0, 0.03) 0%, transparent 50%);
 }
 
 #root {
@@ -33,29 +158,7 @@ body {
   height: 100vh;
 }
 
-/* Fallout-style bright background */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background:
-    radial-gradient(circle at 30% 20%, rgba(77, 238, 172, 0.08), transparent 40%),
-    radial-gradient(circle at 70% 80%, rgba(255, 193, 7, 0.06), transparent 35%),
-    linear-gradient(135deg, rgba(77, 238, 172, 0.03) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 48px 48px;
-  opacity: 1;
-  pointer-events: none;
-  z-index: 0;
-}
-
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  background: radial-gradient(circle at 50% 50%, rgba(13, 17, 23, 0.3), rgba(13, 17, 23, 0.7));
-  pointer-events: none;
-  z-index: 1;
-}
+/* Keep background effects minimal; layout now owns most visuals */
 
 /* Fallout-style scrollbar */
 ::-webkit-scrollbar {
@@ -64,19 +167,19 @@ body::after {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1a1f2e;
-  border: 1px solid #4deeac;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
 }
 
 ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, #4deeac 0%, #2d8e68 100%);
+  background: linear-gradient(180deg, hsl(var(--primary)) 0%, hsl(var(--border)) 100%);
   border-radius: 6px;
-  border: 1px solid #2d8e68;
+  border: 1px solid hsl(var(--border));
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, #5fffc0 0%, #3aa87a 100%);
-  box-shadow: 0 0 8px #4deeac;
+  background: linear-gradient(180deg, hsl(var(--primary)) 0%, hsl(var(--accent)) 100%);
+  box-shadow: 0 0 8px hsl(var(--primary) / 0.35);
 }
 
 /* Modern animations */

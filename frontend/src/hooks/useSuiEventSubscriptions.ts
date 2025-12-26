@@ -27,6 +27,10 @@ export function useSuiEventSubscriptions({ ownerAddress }: Props) {
       if (now - lastInvalidateAtRef.current < 1000) return;
       lastInvalidateAtRef.current = now;
       queryClient.invalidateQueries({ queryKey: queryKeys.ownedRoot(ownerAddress) });
+      void queryClient.refetchQueries({
+        queryKey: queryKeys.ownedRoot(ownerAddress),
+        type: "active",
+      });
     };
 
     const subscribe = async (moveEvent: string) => {

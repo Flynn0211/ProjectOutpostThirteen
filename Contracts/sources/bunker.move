@@ -8,6 +8,7 @@ module contracts::bunker {
     use sui::tx_context::TxContext;
     use sui::transfer;
     use sui::clock::Clock;
+    use sui::table::{Self as table, Table};
     use std::vector;
     use std::string::{Self, String};
     
@@ -21,17 +22,18 @@ module contracts::bunker {
     const E_INSUFFICIENT_WATER: u64 = 305;      // Không đủ nước
     const E_INSUFFICIENT_SCRAP: u64 = 306;      // Không đủ phế liệu
     const E_ROOM_FULL: u64 = 308;               // Phòng đã đầy
+    const E_NPC_COUNT_UNDERFLOW: u64 = 309;     // NPC count underflow
 
     // ==================== HẰNG SỐ ====================
     
     // Tài nguyên ban đầu (Phase 1)
-    const INITIAL_CAPACITY: u64 = 5;            // Sức chứa ban đầu: 5 NPCs
+    const INITIAL_CAPACITY: u64 = 10;           // Sức chứa ban đầu: 10 NPCs
     const INITIAL_FOOD: u64 = 100;              // Thức ăn ban đầu
     const INITIAL_WATER: u64 = 100;             // Nước ban đầu
     const INITIAL_SCRAP: u64 = 50;              // Phế liệu ban đầu
     
     // Sức chứa phòng
-    const LIVING_QUARTERS_CAPACITY: u64 = 5;    // Phòng ở: 5 NPCs
+    const LIVING_QUARTERS_CAPACITY: u64 = 10;   // Phòng ở: 10 NPCs
     const PRODUCTION_ROOM_CAPACITY: u64 = 3;    // Phòng sản xuất: 3 NPCs
     const CAPACITY_INCREASE_PER_LEVEL: u64 = 2; // Tăng 2/level
     
@@ -50,8 +52,21 @@ module contracts::bunker {
     
     // Costs
     const UPGRADE_COST_BASE: u64 = 100;
-    const ROOM_UPGRADE_COST: u64 = 50;
+    const ROOM_UPGRADE_COST_BASE: u64 = 50;
     const ADD_ROOM_COST: u64 = 150;
+
+    // Upgrade scaling & bonuses
+    const ROOM_UPGRADE_CAPACITY_INCREASE: u64 = 3;
+    const ROOM_UPGRADE_EFFICIENCY_INCREASE: u64 = 15;
+    const ROOM_UPGRADE_PRODUCTION_RATE_INCREASE: u64 = 5;
+
+    const BUNKER_UPGRADE_LIVING_CAPACITY_BONUS: u64 = 1;
+    const BUNKER_UPGRADE_EFFICIENCY_BONUS: u64 = 5;
+    const BUNKER_UPGRADE_PRODUCTION_RATE_BONUS: u64 = 2;
+
+    // Power scaling (percent bonus per level above 1)
+    const BUNKER_POWER_BONUS_PCT_PER_LEVEL: u64 = 10;
+    const GENERATOR_POWER_BONUS_PCT_PER_LEVEL: u64 = 20;
 
     // Production tick (10 minutes)
     const PRODUCTION_TICK_MS: u64 = 600000;
@@ -128,6 +143,29 @@ module contracts::bunker {
         bunker.capacity = total;
     }
 
+    fun apply_bunker_upgrade_bonuses(bunker: &mut Bunker) {
+        let mut i = 0;
+        let len = vector::length(&bunker.rooms);
+        while (i < len) {
+            let room = vector::borrow_mut(&mut bunker.rooms, i);
+
+            room.efficiency = if (room.efficiency + BUNKER_UPGRADE_EFFICIENCY_BONUS > 100) { 100 }
+            else { room.efficiency + BUNKER_UPGRADE_EFFICIENCY_BONUS };
+
+            if (room.room_type == ROOM_TYPE_LIVING) {
+                room.capacity = room.capacity + BUNKER_UPGRADE_LIVING_CAPACITY_BONUS;
+            } else if (
+                room.room_type == ROOM_TYPE_FARM
+                || room.room_type == ROOM_TYPE_WATER_PUMP
+                || room.room_type == ROOM_TYPE_WORKSHOP
+            ) {
+                room.production_rate = room.production_rate + BUNKER_UPGRADE_PRODUCTION_RATE_BONUS;
+            };
+
+            i = i + 1;
+        };
+    }
+
     // ==================== STRUCTS ====================
     
     /// Room - Phòng trong bunker (v2.0: with production tracking)
@@ -164,6 +202,49 @@ module contracts::bunker {
         power_consumption: u64,   // Tổng điện tiêu thụ
         
         rooms: vector<Room>,
+    }
+
+    /// Shared ledger to track NPC counts per bunker.
+    /// Required because marketplace purchases cannot mutate the seller's owned `Bunker`.
+    public struct BunkerNpcLedger has key {
+        id: UID,
+        counts: Table<address, u64>,
+    }
+
+    /// Initialize shared NPC ledger (called once on publish).
+    fun init(ctx: &mut TxContext) {
+        let ledger = BunkerNpcLedger {
+            id: object::new(ctx),
+            counts: table::new(ctx),
+        };
+        transfer::share_object(ledger);
+    }
+
+    fun ensure_bunker_entry(ledger: &mut BunkerNpcLedger, bunker_addr: address) {
+        if (!table::contains(&ledger.counts, bunker_addr)) {
+            table::add(&mut ledger.counts, bunker_addr, 0);
+        };
+    }
+
+    public fun get_bunker_npcs(ledger: &BunkerNpcLedger, bunker_addr: address): u64 {
+        if (table::contains(&ledger.counts, bunker_addr)) {
+            *table::borrow(&ledger.counts, bunker_addr)
+        } else {
+            0
+        }
+    }
+
+    public fun increment_bunker_npcs(ledger: &mut BunkerNpcLedger, bunker_addr: address) {
+        ensure_bunker_entry(ledger, bunker_addr);
+        let count = table::borrow_mut(&mut ledger.counts, bunker_addr);
+        *count = *count + 1;
+    }
+
+    public fun decrement_bunker_npcs(ledger: &mut BunkerNpcLedger, bunker_addr: address) {
+        ensure_bunker_entry(ledger, bunker_addr);
+        let count = table::borrow_mut(&mut ledger.counts, bunker_addr);
+        assert!(*count > 0, E_NPC_COUNT_UNDERFLOW);
+        *count = *count - 1;
     }
 
     // ==================== INITIALIZATION ====================
@@ -282,7 +363,13 @@ module contracts::bunker {
         // Tăng level (capacity derives from Living rooms)
         bunker.level = bunker.level + 1;
 
+        // Apply meaningful bonuses so bunker upgrades matter.
+        apply_bunker_upgrade_bonuses(bunker);
+
         recalculate_bunker_capacity(bunker);
+
+        // Ensure stored power values reflect new level/room upgrades immediately.
+        recalculate_power(bunker);
         
         // Emit event
         utils::emit_bunker_upgrade_event(
@@ -302,18 +389,35 @@ module contracts::bunker {
     ) {
         assert!(tx_context::sender(ctx) == bunker.owner, E_NOT_OWNER);
         assert!(room_index < vector::length(&bunker.rooms), E_ROOM_NOT_FOUND);
-        assert!(bunker.scrap >= ROOM_UPGRADE_COST, E_INSUFFICIENT_SCRAP);
+
+        // Scale room upgrade cost by current room level.
+        let current_level = {
+            let room = vector::borrow(&bunker.rooms, room_index);
+            room.level
+        };
+        let room_upgrade_cost = ROOM_UPGRADE_COST_BASE * current_level;
+        assert!(bunker.scrap >= room_upgrade_cost, E_INSUFFICIENT_SCRAP);
         
         // Trừ scrap
-        bunker.scrap = bunker.scrap - ROOM_UPGRADE_COST;
+        bunker.scrap = bunker.scrap - room_upgrade_cost;
 
         let is_living = {
             // Lấy room và upgrade
             let room = vector::borrow_mut(&mut bunker.rooms, room_index);
             let is_living = room.room_type == ROOM_TYPE_LIVING;
             room.level = room.level + 1;
-            room.capacity = room.capacity + CAPACITY_INCREASE_PER_LEVEL;
-            room.efficiency = if (room.efficiency + 10 > 100) { 100 } else { room.efficiency + 10 };
+            room.capacity = room.capacity + ROOM_UPGRADE_CAPACITY_INCREASE;
+            room.efficiency = if (room.efficiency + ROOM_UPGRADE_EFFICIENCY_INCREASE > 100) { 100 }
+            else { room.efficiency + ROOM_UPGRADE_EFFICIENCY_INCREASE };
+
+            // Production rooms get a direct rate boost so upgrades are noticeable.
+            if (
+                room.room_type == ROOM_TYPE_FARM
+                || room.room_type == ROOM_TYPE_WATER_PUMP
+                || room.room_type == ROOM_TYPE_WORKSHOP
+            ) {
+                room.production_rate = room.production_rate + ROOM_UPGRADE_PRODUCTION_RATE_INCREASE;
+            };
             is_living
         };
 
@@ -321,6 +425,10 @@ module contracts::bunker {
         if (is_living) {
             recalculate_bunker_capacity(bunker);
         };
+
+        // Storage upgrades affect power reduction; generator upgrades affect generation scaling.
+        // Recompute power so the UI/gameplay updates immediately after upgrade.
+        recalculate_power(bunker);
     }
 
     /// Thêm phòng mới
@@ -496,6 +604,12 @@ module contracts::bunker {
         let mut total_generation = 0;
         let mut total_consumption = 0;
         let mut storage_reduction = 0;
+
+        let bunker_level_bonus_pct = if (bunker.level > 1) {
+            (bunker.level - 1) * BUNKER_POWER_BONUS_PCT_PER_LEVEL
+        } else {
+            0
+        };
         
         let mut i = 0;
         let len = vector::length(&bunker.rooms);
@@ -504,7 +618,15 @@ module contracts::bunker {
             let room = vector::borrow(&bunker.rooms, i);
             
             if (room.room_type == ROOM_TYPE_GENERATOR && room.assigned_npcs > 0) {
-                total_generation = total_generation + (POWER_GENERATOR_PRODUCE * room.assigned_npcs);
+                let generator_level_bonus_pct = if (room.level > 1) {
+                    (room.level - 1) * GENERATOR_POWER_BONUS_PCT_PER_LEVEL
+                } else {
+                    0
+                };
+
+                let bonus_pct = 100 + bunker_level_bonus_pct + generator_level_bonus_pct;
+
+                total_generation = total_generation + ((POWER_GENERATOR_PRODUCE * room.assigned_npcs * bonus_pct) / 100);
                 total_consumption = total_consumption + (POWER_GENERATOR_CONSUME * room.assigned_npcs);
             } else if (room.room_type == ROOM_TYPE_FARM && room.assigned_npcs > 0) {
                 total_consumption = total_consumption + (POWER_FARM * room.assigned_npcs);

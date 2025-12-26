@@ -8,7 +8,7 @@ import { PACKAGE_ID } from "../constants";
 import { useBunker } from "../query/singleQueries";
 import { useOwnedNpcsEnabled } from "../query/ownedQueries";
 import { queryKeys } from "../query/queryKeys";
-
+import { postTxRefresh } from "../utils/postTxRefresh";
 interface AssignNPCModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -67,7 +67,9 @@ export function AssignNPCModal({
 
   const handleAssign = async () => {
     if (!account?.address || !selectedNpc) return;
-    if (!powerSufficient) {
+    // Allow assigning to Generator even when power is currently insufficient.
+    // Adding workers to Generator can increase generation and break the deadlock.
+    if (!powerSufficient && Number(room.room_type) !== 1) {
       alert("Insufficient power. Please ensure Generator output covers consumption.");
       return;
     }
@@ -89,6 +91,7 @@ export function AssignNPCModal({
         {
           onSuccess: async () => {
             alert("NPC assigned to room!");
+            postTxRefresh(queryClient, account.address);
             // Invalidate specifically the bunker and the NPC list
             // We await these so the UI updates before success
             await Promise.all([
@@ -130,6 +133,7 @@ export function AssignNPCModal({
         {
           onSuccess: async () => {
             alert("NPC removed from room!");
+            postTxRefresh(queryClient, account.address);
             await Promise.all([
                queryClient.invalidateQueries({ queryKey: queryKeys.bunker(bunkerId) }),
                queryClient.invalidateQueries({ queryKey: queryKeys.npcs(account.address) })

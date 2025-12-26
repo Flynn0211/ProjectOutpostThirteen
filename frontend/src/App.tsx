@@ -3,22 +3,11 @@ import { useCurrentAccount } from "@mysten/dapp-kit";
 import { ConnectWallet } from "./components/ConnectWallet";
 import { WalletButton } from "./components/WalletButton";
 import { BunkerView } from "./components/BunkerView";
-import { Toolbar } from "./components/Toolbar";
+import { Toolbar, type ToolbarTab } from "./components/Toolbar";
 import { ToastHost } from "./components/ToastHost";
 import { NotificationLogModal } from "./components/NotificationLogModal";
 import { RoomDetailModal } from "./components/RoomDetailModal";
-import { BalanceDisplay } from "./components/BalanceDisplay";
-
-type ToolbarTab =
-  | "inventory"
-  | "raid"
-  | "market"
-  | "expedition"
-  | "recruit"
-  | "npc-manager"
-  | "logs" // New tab
-  | "upgrade"
-  | null;
+import { SwooshLayout } from "./components/SwooshLayout";
 
 function App() {
   const account = useCurrentAccount();
@@ -53,14 +42,11 @@ function App() {
 
   console.log("Account found, showing BunkerView");
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-[#0d1117]">
-      {/* Decorative background layers - Fallout style */}
-      <div className="pointer-events-none absolute inset-0 z-0">
-        <div className="absolute -left-24 -top-24 w-96 h-96 rounded-full bg-[radial-gradient(circle,rgba(77,238,172,0.15),transparent_60%)] blur-3xl" />
-        <div className="absolute right-0 top-1/3 w-80 h-80 rounded-full bg-[radial-gradient(circle,rgba(255,193,7,0.12),transparent_60%)] blur-3xl" />
-        <div className="absolute left-1/3 bottom-0 w-[520px] h-[520px] rounded-full bg-[radial-gradient(circle,rgba(77,238,172,0.08),transparent_65%)] blur-3xl" />
-      </div>
-
+    <SwooshLayout
+      activeTab={activeTab}
+      onTabChange={setActiveTab}
+      headerRight={<WalletButton />}
+    >
       <BunkerView
         onBunkerLoaded={setBunkerId}
         refreshTick={refreshTick}
@@ -79,11 +65,12 @@ function App() {
           setActiveTab(null);
           setRefreshTick((t) => t + 1);
         }}
+        hideBar
       />
       {activeTab === "logs" && (
         <NotificationLogModal onClose={() => setActiveTab(null)} />
       )}
-      
+
       {bunkerId && roomDetailIndex !== null && (
         <RoomDetailModal
           isOpen={true}
@@ -93,11 +80,7 @@ function App() {
         />
       )}
       <ToastHost />
-      <div className="absolute top-4 right-4 z-50 flex items-center gap-3">
-        <BalanceDisplay />
-        <WalletButton />
-      </div>
-    </div>
+    </SwooshLayout>
   );
 }
 

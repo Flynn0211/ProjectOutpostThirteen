@@ -1,12 +1,14 @@
 import { useMemo, useState, useEffect } from "react";
 import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
+import { useQueryClient } from "@tanstack/react-query";
 import { getObject, suiClient } from "../utils/sui";
 import type { NPC } from "../types";
 import { NPC_STATUS, RARITY_NAMES } from "../constants";
 import { PACKAGE_ID } from "../constants";
 import { useOwnedNpcsEnabled } from "../query/ownedQueries";
 import { useGameStore } from "../state/gameStore";
+import { postTxRefresh } from "../utils/postTxRefresh";
 import {
   formatRemaining,
   isNpcOnExpedition,
@@ -25,6 +27,7 @@ interface ExpeditionModalProps {
 export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalProps) {
   const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
+  const queryClient = useQueryClient();
   const devCheatsUnlocked = useGameStore((s) => s.devCheatsUnlocked);
   const [selectedNpc, setSelectedNpc] = useState<string | null>(null);
   const [duration, setDuration] = useState(1);
@@ -201,6 +204,11 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
               result: summary,
             });
 
+            if (ownerAddress) {
+              postTxRefresh(queryClient, ownerAddress);
+              window.setTimeout(() => postTxRefresh(queryClient, ownerAddress), 1200);
+            }
+
             alert("Expedition started!");
             onClose();
           },
@@ -223,7 +231,8 @@ export function ExpeditionModal({ isOpen, onClose, bunkerId }: ExpeditionModalPr
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md animate-fadeInScale">
       <div className="relative bg-gradient-to-br from-[#2a3447] via-[#1f2937] to-[#1a1f2e] border-[3px] border-[#4deeac] rounded-2xl p-8 max-w-3xl w-full max-h-[85vh] overflow-y-auto overflow-x-hidden shadow-[0_0_50px_rgba(77,238,172,0.7),0_20px_80px_rgba(0,0,0,0.8)] transform transition-all duration-300">
-
+        <div className="absolute top-0 left-0 w-20 h-20 border-t-4 border-l-4 border-[#5fffc0] rounded-tl-2xl" />
+        <div className="absolute bottom-0 right-0 w-20 h-20 border-b-4 border-r-4 border-[#5fffc0] rounded-br-2xl" />
 
         <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-[#4deeac]/5 to-transparent animate-shimmer" />
 

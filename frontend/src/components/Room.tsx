@@ -4,23 +4,28 @@ import { getRoomImageUrl } from "../utils/imageUtils";
 import { ROOM_TYPE_NAMES } from "../constants";
 import { NPCComponent } from "./NPC";
 import { AssignNPCModal } from "./AssignNPCModal";
-import { useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
+import { useCurrentAccount, useSignAndExecuteTransactionBlock } from "@mysten/dapp-kit";
 import { TransactionBlock } from "@mysten/sui.js/transactions";
 import { NPC_STATUS, PACKAGE_ID } from "../constants";
 import { useGameStore } from "../state/gameStore";
+import { useQueryClient } from "@tanstack/react-query";
+import { postTxRefresh } from "../utils/postTxRefresh";
 
 interface RoomProps {
   room: RoomType;
   roomIndex: number;
   npcs: any[];
   bunkerId?: string;
+  bunkerCapacity?: number;
   onRefresh?: () => void;
   onOpenRoomDetail?: (roomIndex: number) => void;
 }
 
-export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh, onOpenRoomDetail }: RoomProps) {
+export function RoomComponent({ room, roomIndex, npcs, bunkerId, bunkerCapacity, onRefresh, onOpenRoomDetail }: RoomProps) {
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const account = useCurrentAccount();
   const { mutate: signAndExecute } = useSignAndExecuteTransactionBlock();
+  const queryClient = useQueryClient();
   const roomImageUrl = getRoomImageUrl(room.room_type);
   const roomName = ROOM_TYPE_NAMES[room.room_type as keyof typeof ROOM_TYPE_NAMES] || "Unknown";
 
@@ -37,7 +42,11 @@ export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh, onOp
       case 0: {
         // Living Quarters: increases bunker capacity passively
         uses.push("None");
-        produces.push(`Capacity +${room.capacity}`);
+        if (typeof bunkerCapacity === "number" && Number.isFinite(bunkerCapacity) && bunkerCapacity > 0) {
+          produces.push(`Capacity ${Math.floor(bunkerCapacity)}`);
+        } else {
+          produces.push(`Capacity ${room.capacity}`);
+        }
         break;
       }
       case 1: {
@@ -112,19 +121,24 @@ export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh, onOp
 
   const { usesText, producesText } = getUsesAndProduces();
 
-  const ROOM_WIDTH = 384;
-  const ROOM_HEIGHT = 192;
+  const effectiveCapacity =
+    room.room_type === 0 && typeof bunkerCapacity === "number" && Number.isFinite(bunkerCapacity) && bunkerCapacity > 0
+      ? Math.floor(bunkerCapacity)
+      : Number(room.capacity ?? 0);
+
+  const ROOM_WIDTH = 460;
+  const ROOM_HEIGHT = 230;
   const NPC_FRAME = 128;
   const NPC_SCALE = 0.85;
   // Reserve vertical space for the bottom room info overlay so NPCs never overlap it.
   // (Matches the visual height of the bottom info tab area.)
-  const ROOM_INFO_OVERLAY_HEIGHT = 64;
+  const ROOM_INFO_OVERLAY_HEIGHT = 76;
   const npcDisplayWidth = NPC_FRAME * NPC_SCALE;
   const npcDisplayHeight = NPC_FRAME * NPC_SCALE;
   const npcAvailableHeight = Math.max(0, ROOM_HEIGHT - ROOM_INFO_OVERLAY_HEIGHT);
   const npcY = Math.max(0, (npcAvailableHeight - npcDisplayHeight) / 2);
 
-  const canCollect = bunkerId && (room.room_type === 2 || room.room_type === 3); // FARM or WATER_PUMP
+  const canCollect = bunkerId && (room.room_type === 2 || room.room_type === 3 || room.room_type === 4); // FARM/WATER_PUMP/WORKSHOP
 
   const handleCollect = async () => {
     if (!bunkerId) return;
@@ -142,6 +156,10 @@ export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh, onOp
         { transactionBlock: tx },
         {
           onSuccess: () => {
+            if (account?.address) {
+              postTxRefresh(queryClient, account.address);
+              window.setTimeout(() => postTxRefresh(queryClient, account.address!), 1200);
+            }
             if (onRefresh) onRefresh();
           },
           onError: (error: any) => {
@@ -158,16 +176,16 @@ export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh, onOp
     <>
       <div
         className={[
-          "relative flex-shrink-0 rounded-xl overflow-hidden border-3 border-[#4deeac] bg-[#2a3447] cursor-pointer transition-all shadow-[0_0_20px_rgba(77,238,172,0.3)] hover:border-[#5fffc0] hover:shadow-[0_0_30px_rgba(77,238,172,0.6)]",
-          isFlashing ? "ring-4 ring-[#4deeac]/60 shadow-[0_0_45px_rgba(77,238,172,0.9)]" : "",
+          "relative flex-shrink-0 rounded-sm overflow-hidden border-2 border-primary bg-card cursor-pointer transition-all",
+          isFlashing ? "ring-4 ring-primary/50" : "",
         ].join(" ")}
-        style={{ width: "384px", height: "192px" }}
+        style={{ width: `${ROOM_WIDTH}px`, height: `${ROOM_HEIGHT}px` }}
         onClick={() => {
           if (onOpenRoomDetail) {
             onOpenRoomDetail(roomIndex);
             return;
           }
-          if (bunkerId) setShowAssignModal(true);
+          if (bunkerId && room.room_type !== 0) setShowAssignModal(true);
         }}
       >
         {/* Room image */}
@@ -178,24 +196,24 @@ export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh, onOp
         />
         
         {/* Light overlay instead of dark */}
-        <div className="absolute inset-0 bg-gradient-to-t from-[#1a1f2e]/80 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-transparent to-transparent" />
 
         {/* Room info overlay */}
         <div className="absolute bottom-0 left-0 right-0 px-3 py-3">
-          <div className="bg-[#2a3447] border-2 border-[#4deeac] rounded-lg px-3 py-2 text-white text-xs flex items-center justify-between gap-2 shadow-[0_0_10px_rgba(77,238,172,0.4)]">
+          <div className="bg-card/90 border border-primary rounded-sm px-3 py-2 text-foreground text-xs flex items-center justify-between gap-2">
             <div>
-              <div className="font-bold text-sm leading-tight text-[#4deeac]">{roomName}</div>
-              <div className="text-[11px] text-white">Level {room.level}</div>
-              <div className="text-[10px] text-white/90 leading-tight">Uses: {usesText}</div>
-              <div className="text-[10px] text-white/90 leading-tight">Produces: {producesText}</div>
+              <div className="font-orbitron font-bold text-sm leading-tight text-primary">{roomName}</div>
+              <div className="text-[11px] text-foreground/85">Level {room.level}</div>
+              <div className="text-[10px] text-foreground/85 leading-tight">Uses: {usesText}</div>
+              <div className="text-[10px] text-foreground/85 leading-tight">Produces: {producesText}</div>
             </div>
-            <div className="text-[11px] font-bold text-white bg-[#4deeac] rounded-full px-3 py-1">
-              {room.assigned_npcs}/{room.capacity} NPCs
+            <div className="text-[11px] font-bold text-primary-foreground bg-primary rounded-sm px-3 py-1">
+              {room.assigned_npcs}/{effectiveCapacity} NPCs
             </div>
             {canCollect && (
               <button
                 onClick={(e) => { e.stopPropagation(); handleCollect(); }}
-                className="ml-auto px-3 py-1 text-[11px] font-bold bg-gradient-to-r from-[#4deeac] to-[#3dd69a] text-[#0d1117] rounded hover:scale-105 transition-all"
+                className="ml-auto vault-button px-3 py-1 text-[11px]"
               >
                 Collect
               </button>
@@ -219,7 +237,8 @@ export function RoomComponent({ room, roomIndex, npcs, bunkerId, onRefresh, onOp
                 isWalking={isWalking}
                 scale={NPC_SCALE}
                 patrolDistance={isWalking ? patrolDistance : 0}
-                patrolDurationSeconds={3 + (index % 3) * 0.7}
+                // Slower movement so NPCs don't zip across rooms.
+                patrolDurationSeconds={8 + (index % 3) * 1.6}
                 patrolDelaySeconds={(index % 4) * 0.25}
               />
             );

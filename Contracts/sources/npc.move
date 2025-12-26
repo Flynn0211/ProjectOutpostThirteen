@@ -68,6 +68,7 @@ module contracts::npc {
     const E_ROOM_FULL: u64 = 220;
     const E_INSUFFICIENT_POWER: u64 = 221;
     const E_INVALID_WORK_ROOM: u64 = 222;
+    const E_BUNKER_FULL: u64 = 223;
     
     // Recovery Constants
     const RECOVERY_TIME_MS: u64 = 3600000;      // 1 giờ = 3,600,000 ms
@@ -187,11 +188,20 @@ module contracts::npc {
      * ```
      */
     public entry fun recruit_npc(
+        bunker: &bunker::Bunker,
+        ledger: &mut bunker::BunkerNpcLedger,
         payment: Coin<SUI>,
         name: vector<u8>,
         clock: &Clock,
         ctx: &mut TxContext
     ) {
+        let sender = tx_context::sender(ctx);
+        assert!(bunker::get_owner(bunker) == sender, E_NOT_OWNER);
+
+        let bunker_id = bunker::get_id(bunker);
+        let current = bunker::get_bunker_npcs(ledger, bunker_id);
+        assert!(current < bunker::get_capacity(bunker), E_BUNKER_FULL);
+
         // 1. Kiểm tra thanh toán đủ 0.1 SUI (100_000_000 MIST)
         let amount = coin::value(&payment);
         assert!(amount >= utils::recruit_cost(), E_INSUFFICIENT_PAYMENT);
@@ -218,7 +228,6 @@ module contracts::npc {
         let skills = generate_skills(profession, rarity, clock, ctx);
         
         // 7. Tạo NPC object
-        let sender = tx_context::sender(ctx);
         let npc = NPC {
             id: object::new(ctx),
             rarity,
@@ -255,6 +264,9 @@ module contracts::npc {
             max_stamina,
             clock
         );
+
+        // Count towards bunker limit (listed NPCs also count; only sale decrements).
+        bunker::increment_bunker_npcs(ledger, bunker_id);
         
         // 9. Transfer NPC cho người chơi (owned object)
         transfer::public_transfer(npc, sender);
@@ -715,12 +727,19 @@ module contracts::npc {
         assert!(bunker::get_owner(bunker) == sender, E_NOT_OWNER);
         assert!(npc.status == STATUS_IDLE, E_NPC_NOT_READY);
         assert!(!is_knocked(npc), E_NPC_NOT_READY);
-        
-        // Check power sufficient
-        assert!(bunker::is_power_sufficient(bunker), E_INSUFFICIENT_POWER);
 
         // Only allow assigning to real work rooms (Generator/Farm/WaterPump/Workshop)
         assert!(bunker::can_assign_worker(bunker, room_index), E_INVALID_WORK_ROOM);
+
+        // Power gating:
+        // - For Generator, assigning workers can INCREASE total power, so we must allow it even
+        //   when power is currently insufficient (otherwise players can get stuck).
+        // - For other production rooms, assigning workers increases consumption, so we require
+        //   power to be sufficient at the moment of assignment.
+        let (room_type, _lvl, _assigned, _cap, _rate, _acc) = bunker::get_room_info(bunker, room_index);
+        if (room_type != bunker::room_type_generator()) {
+            assert!(bunker::is_power_sufficient(bunker), E_INSUFFICIENT_POWER);
+        };
         
         // Assign
         npc.status = STATUS_WORKING;

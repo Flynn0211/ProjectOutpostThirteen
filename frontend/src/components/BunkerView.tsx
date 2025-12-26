@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCurrentAccount } from "@mysten/dapp-kit";
 import type { Bunker } from "../types";
-import { IMAGES, NETWORK, PACKAGE_ID } from "../constants";
+import { IMAGES, NETWORK } from "../constants";
 import { RoomComponent } from "./Room";
 import { CreateBunkerModal } from "./CreateBunkerModal";
 import { ResourcesBar } from "./ResourcesBar";
@@ -24,6 +24,26 @@ export function BunkerView({ onBunkerLoaded, refreshTick, onOpenRoomDetail, onOp
   const npcsQuery = useOwnedNpcs(ownerAddress, { refetchInterval: false });
 
   useSuiEventSubscriptions({ ownerAddress });
+
+  // Backward-compat: some actions still signal updates via window events.
+  // Force refetch so UI updates immediately without requiring manual refresh.
+  useEffect(() => {
+    if (!ownerAddress) return;
+
+    const handler = () => {
+      void bunkersQuery.refetch();
+      void npcsQuery.refetch();
+    };
+
+    window.addEventListener("bunker-updated", handler as EventListener);
+    window.addEventListener("npcs-updated", handler as EventListener);
+    window.addEventListener("inventory-updated", handler as EventListener);
+    return () => {
+      window.removeEventListener("bunker-updated", handler as EventListener);
+      window.removeEventListener("npcs-updated", handler as EventListener);
+      window.removeEventListener("inventory-updated", handler as EventListener);
+    };
+  }, [ownerAddress, bunkersQuery, npcsQuery]);
 
   const bunker: Bunker | null = useMemo(() => {
     const list = bunkersQuery.data ?? [];
@@ -64,19 +84,19 @@ export function BunkerView({ onBunkerLoaded, refreshTick, onOpenRoomDetail, onOp
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-900">
-        <div className="text-white text-xl">Loading bunker...</div>
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <div className="text-foreground font-orbitron text-xl">Loading bunker...</div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-900">
-        <div className="text-white text-center max-w-2xl px-6">
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <div className="text-foreground text-center max-w-2xl px-6">
           <div className="text-xl font-bold mb-2">Failed to load bunker data</div>
-          <div className="text-sm text-white/80 break-words">{String(error?.message ?? error)}</div>
-          <div className="text-sm text-white/70 mt-3">If you are on localhost, restart dev server after pulling.</div>
+          <div className="text-sm text-foreground/90 break-words">{String(error?.message ?? error)}</div>
+          <div className="text-sm text-muted-foreground mt-3">If you are on localhost, restart dev server after pulling.</div>
         </div>
       </div>
     );
@@ -86,25 +106,23 @@ export function BunkerView({ onBunkerLoaded, refreshTick, onOpenRoomDetail, onOp
     // If we're still fetching (or retrying) bunker data, don't show the "Create Bunker" empty state.
     if (bunkersQuery.isFetching) {
       return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-900">
-          <div className="text-white text-xl">Loading bunker...</div>
+        <div className="flex items-center justify-center min-h-screen bg-background">
+          <div className="text-foreground font-orbitron text-xl">Loading bunker...</div>
         </div>
       );
     }
 
     return (
       <>
-        <div className="flex items-center justify-center min-h-screen bg-gray-900">
+        <div className="flex items-center justify-center min-h-screen bg-background">
           <div className="text-center">
-            <p className="text-white text-xl mb-4">No bunker found</p>
-            <div className="text-white/70 text-sm mb-4 space-y-1">
-              <div>Network: <span className="text-white/90">{NETWORK}</span></div>
-              <div className="break-all">Package: <span className="text-white/90">{PACKAGE_ID}</span></div>
-              <div className="text-white/60">Bunkers are per-network and per-package deployment.</div>
+            <p className="text-foreground font-orbitron text-xl mb-4">No bunker found</p>
+            <div className="text-muted-foreground text-sm mb-4 space-y-1">
+              <div>Network: <span className="text-foreground">{NETWORK}</span></div>
             </div>
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="vault-button"
             >
               Create Bunker
             </button>
@@ -156,7 +174,7 @@ export function BunkerView({ onBunkerLoaded, refreshTick, onOpenRoomDetail, onOp
             void npcsQuery.refetch();
           }}
           disabled={isRefreshing}
-          className="p-2 bg-gray-800/80 hover:bg-gray-700 text-[#4deeac] border border-[#4deeac] rounded-lg transition-all shadow-[0_0_10px_rgba(77,238,172,0.3)] hover:shadow-[0_0_15px_rgba(77,238,172,0.5)] flex items-center gap-2"
+          className="p-2 bg-card/60 hover:bg-card text-primary border border-primary rounded-sm transition-all flex items-center gap-2 disabled:opacity-60"
           title="Refresh Data"
         >
           <span className={`text-xl ${isRefreshing ? 'animate-spin' : ''}`}>↻</span>
@@ -165,7 +183,7 @@ export function BunkerView({ onBunkerLoaded, refreshTick, onOpenRoomDetail, onOp
 
       {/* Bunker grid - 3 rooms per row */}
       <div className="absolute top-28 left-0 right-0 bottom-0 px-8 pb-20 overflow-y-auto overflow-x-hidden flex justify-center">
-        <div className="relative w-full max-w-[1250px]">
+        <div className="relative w-full max-w-[1600px]">
           {/* Ground shadow */}
           <div className="absolute top-0 left-0 right-0 h-4 bg-gradient-to-b from-black/50 to-transparent" />
 
@@ -177,6 +195,7 @@ export function BunkerView({ onBunkerLoaded, refreshTick, onOpenRoomDetail, onOp
                 roomIndex={roomIndex}
                 npcs={npcs.filter((npc) => getAssignedRoomIndex(npc) === roomIndex)}
                 bunkerId={bunker.id}
+                bunkerCapacity={Number(bunker.capacity ?? 0)}
                 onOpenRoomDetail={onOpenRoomDetail}
                 onRefresh={() => {
                   void bunkersQuery.refetch();

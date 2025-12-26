@@ -13,14 +13,14 @@ module contracts::contracts_tests {
         let mut ctx = tx_context::new(owner, tx_context::dummy_tx_hash_with_hint(1), 0, 0, 0);
 
         let mut bunker = bunker::new_bunker_for_testing(owner, &mut ctx);
-        assert!(bunker::get_capacity(&bunker) == 5, 0);
+        assert!(bunker::get_capacity(&bunker) == 10, 0);
 
         bunker::add_scrap(&mut bunker, 1000);
         bunker::add_room(&mut bunker, bunker::room_type_living(), &mut ctx);
-        assert!(bunker::get_capacity(&bunker) == 10, 1);
+        assert!(bunker::get_capacity(&bunker) == 20, 1);
 
         bunker::upgrade_room(&mut bunker, 0, &mut ctx);
-        assert!(bunker::get_capacity(&bunker) == 12, 2);
+        assert!(bunker::get_capacity(&bunker) == 22, 2);
 
         bunker::destroy_bunker_for_testing(bunker);
     }

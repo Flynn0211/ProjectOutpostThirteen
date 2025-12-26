@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { NPC, Room } from "../types";
 import { NPC_STATUS, PACKAGE_ID, RARITY_NAMES, ROOM_TYPE_NAMES } from "../constants";
 import { queryKeys } from "../query/queryKeys";
+import { postTxRefresh } from "../utils/postTxRefresh";
 import { useOwnedNpcs } from "../query/ownedQueries";
 import { useBunker } from "../query/singleQueries";
 
@@ -162,7 +163,9 @@ export function RoomDetailModal({ isOpen, onClose, bunkerId, roomIndex }: RoomDe
     if (!account?.address || !selectedNpcId || !bunkerId) return;
     if (!room) return;
 
-    if (!powerSufficient) {
+    // Allow assigning to Generator even when power is currently insufficient.
+    // Adding workers to Generator can increase generation and break the deadlock.
+    if (!powerSufficient && Number(room?.room_type) !== 1) {
       alert("Insufficient power. Please ensure Generator output covers consumption.");
       return;
     }
@@ -180,6 +183,7 @@ export function RoomDetailModal({ isOpen, onClose, bunkerId, roomIndex }: RoomDe
         {
           onSuccess: async () => {
             alert("NPC assigned!");
+            if (ownerAddress) postTxRefresh(queryClient, ownerAddress);
             await Promise.all([
                queryClient.invalidateQueries({ queryKey: queryKeys.bunker(bunkerId) }),
                queryClient.invalidateQueries({ queryKey: queryKeys.npcs(ownerAddress) })
@@ -215,6 +219,7 @@ export function RoomDetailModal({ isOpen, onClose, bunkerId, roomIndex }: RoomDe
         {
           onSuccess: async () => {
             alert("NPC removed!");
+            if (ownerAddress) postTxRefresh(queryClient, ownerAddress);
              await Promise.all([
                queryClient.invalidateQueries({ queryKey: queryKeys.bunker(bunkerId) }),
                queryClient.invalidateQueries({ queryKey: queryKeys.npcs(ownerAddress) })
@@ -249,6 +254,7 @@ export function RoomDetailModal({ isOpen, onClose, bunkerId, roomIndex }: RoomDe
         {
           onSuccess: async () => {
              alert("Room upgraded!");
+            if (ownerAddress) postTxRefresh(queryClient, ownerAddress);
              await queryClient.invalidateQueries({ queryKey: queryKeys.bunker(bunkerId) });
              setLoading(false);
           },

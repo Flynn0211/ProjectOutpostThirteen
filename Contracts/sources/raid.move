@@ -90,14 +90,20 @@ module contracts::raid {
     public entry fun start_raid(
         attacker_bunker: &mut Bunker,
         attacker_npc_count: u64,  // Number of NPCs participating (simplified for MVP)
-        defender_bunker: &mut Bunker,
+        defender_bunker_id: address,
+        defender_owner: address,
+        defender_bunker_level: u64,
+        defender_npc_count: u64,
+        defender_food: u64,
+        defender_water: u64,
+        defender_scrap: u64,
         mut payment: Coin<SUI>,
         raid_history: &mut RaidHistory,
         clock: &Clock,
         ctx: &mut TxContext
     ) {
         let attacker = tx_context::sender(ctx);
-        let defender = bunker::get_owner(defender_bunker);
+        let defender = defender_owner;
         let current_time = clock::timestamp_ms(clock);
         
         // ===== VALIDATION =====
@@ -105,16 +111,16 @@ module contracts::raid {
         // 1. Check ownership
         assert!(bunker::get_owner(attacker_bunker) == attacker, E_NOT_OWNER);
         
-        // 2. Cannot raid self
+        // 2. Cannot raid self (either by owner or by same bunker id)
         assert!(attacker != defender, E_CANNOT_RAID_SELF);
+        assert!(bunker::get_address(attacker_bunker) != defender_bunker_id, E_CANNOT_RAID_SELF);
         
         // 3. Check has NPCs
         assert!(attacker_npc_count > 0, E_NO_NPCS);
         
-        // 4. Check cooldown (24h per defender)
-        let defender_id = bunker::get_address(defender_bunker);
-        if (table::contains(&raid_history.last_raid_times, defender_id)) {
-            let last_raid = *table::borrow(&raid_history.last_raid_times, defender_id);
+        // 4. Check cooldown (24h per defender bunker)
+        if (table::contains(&raid_history.last_raid_times, defender_bunker_id)) {
+            let last_raid = *table::borrow(&raid_history.last_raid_times, defender_bunker_id);
             assert!(current_time - last_raid >= RAID_COOLDOWN_MS, E_RAID_COOLDOWN);
         };
         
@@ -137,8 +143,10 @@ module contracts::raid {
         // Each NPC contributes 100 power
         let mut attacker_power = attacker_npc_count * 100;
         
-        // Defender power based on bunker level * 100
-        let mut defender_power = bunker::get_level(defender_bunker) * 100;
+        // Defender power comes primarily from defending NPCs (NPCs assigned to rooms).
+        // Also add a modest bunker-level baseline to preserve progression.
+        let mut defender_power = defender_npc_count * 100;
+        defender_power = defender_power + (defender_bunker_level * 50);
         
         // Home advantage: +10%
         defender_power = defender_power + (defender_power * HOME_ADVANTAGE_PERCENT / 100);
@@ -155,31 +163,25 @@ module contracts::raid {
         let mut scrap_looted = 0;
         
         if (success) {
-            // Attacker wins - loot 20% of defender's resources
-            food_looted = (bunker::get_food(defender_bunker) * LOOT_PERCENT_ON_WIN) / 100;
-            water_looted = (bunker::get_water(defender_bunker) * LOOT_PERCENT_ON_WIN) / 100;
-            scrap_looted = (bunker::get_scrap(defender_bunker) * LOOT_PERCENT_ON_WIN) / 100;
-            
-            // Transfer resources
+            // Attacker wins - loot 20% of defender snapshot resources.
+            // NOTE: In this MVP, we do not mutate the defender's owned bunker on-chain.
+            food_looted = (defender_food * LOOT_PERCENT_ON_WIN) / 100;
+            water_looted = (defender_water * LOOT_PERCENT_ON_WIN) / 100;
+            scrap_looted = (defender_scrap * LOOT_PERCENT_ON_WIN) / 100;
+
+            // Credit resources to attacker
             bunker::add_food(attacker_bunker, food_looted);
             bunker::add_water(attacker_bunker, water_looted);
             bunker::add_scrap(attacker_bunker, scrap_looted);
-            
-            bunker::consume_food(defender_bunker, food_looted);
-            bunker::consume_water(defender_bunker, water_looted);
-            bunker::consume_scrap(defender_bunker, scrap_looted);
-        } else {
-            // Defender wins - reward defender
-            bunker::add_scrap(defender_bunker, DEFENSE_WIN_SCRAP);
         };
         
         // ===== UPDATE HISTORY =====
         
-        // Update last raid time for this defender
-        if (table::contains(&raid_history.last_raid_times, defender_id)) {
-            *table::borrow_mut(&mut raid_history.last_raid_times, defender_id) = current_time;
+        // Update last raid time for this defender bunker id
+        if (table::contains(&raid_history.last_raid_times, defender_bunker_id)) {
+            *table::borrow_mut(&mut raid_history.last_raid_times, defender_bunker_id) = current_time;
         } else {
-            table::add(&mut raid_history.last_raid_times, defender_id, current_time);
+            table::add(&mut raid_history.last_raid_times, defender_bunker_id, current_time);
         };
         
         // Update daily count

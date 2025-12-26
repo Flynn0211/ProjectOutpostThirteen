@@ -1,90 +1,90 @@
-# 🎨 Hướng Dẫn Tích Hợp Frontend (On-Chain Bunker)
+# 🎨 Frontend Integration Guide (On-Chain Bunker)
 
-Tài liệu này dành cho Frontend Developers để kết nối với hệ thống Smart Contracts của On-Chain Bunker trên Sui.
+This document is for Frontend Developers to connect with the On-Chain Bunker Smart Contracts system on Sui.
 
 ---
 
-## 🔑 Các Khái Niệm Cốt Lõi
+## 🔑 Core Concepts
 
-Khi làm việc với Sui và `dapp-kit`, bạn cần chú ý các Object Types sau:
+When working with Sui and `dapp-kit`, pay attention to the following Object Types:
 
 ### 1. Object Types
 
-Để query object, bạn cần biết Type chính xác của nó.
-_Thay `PACKAGE_ID` bằng địa chỉ package thực tế sau khi deploy._
+To query an object, you need its exact Type.
+_Replace `PACKAGE_ID` with the actual package address after deployment._
 
-| Tên Object | Suffix Type        | Mô tả                                                         |
-| :--------- | :----------------- | :------------------------------------------------------------ |
-| **NPC**    | `::npc::NPC`       | Nhân vật chính. Owned Object.                                 |
-| **Item**   | `::item::Item`     | Vật phẩm. Owned Object.                                       |
-| **Bunker** | `::bunker::Bunker` | Hầm trú ẩn. (Có thể là Shared hoặc Owned tùy implementation). |
+| Object Name | Suffix Type        | Description                                                   |
+| :---------- | :----------------- | :------------------------------------------------------------ |
+| **NPC**     | `::npc::NPC`       | Main character. Owned Object.                                 |
+| **Item**    | `::item::Item`     | Item. Owned Object.                                           |
+| **Bunker**  | `::bunker::Bunker` | Bunker. (Can be Shared or Owned depending on implementation). |
 
-_Ví dụ full type_: `0x123...::npc::NPC`
+_Example full type_: `0x123...::npc::NPC`
 
 ---
 
-## 📡 Events (Quan trọng)
+## 📡 Events (Important)
 
-Vì logic random thực hiện on-chain, Frontend **KHÔNG THỂ** biết kết quả ngay lập tức từ response của transaction block thông thường. Bạn phải **lắng nghe Events** hoặc parse Events từ Transaction Receipt.
+Because random logic is executed on-chain, the Frontend **CANNOT** know the result immediately from the transaction block response. You must **listen to Events** or parse Events from the Transaction Receipt.
 
-### Các Events cần dùng
+### Required Events
 
 **1. `RecruitEvent`** (Module: `utils`)
 
-- **Khi nào**: Người chơi chiêu mộ NPC thành công.
-- **Dữ liệu**: `npc_id`, `rarity`, `profession`, `max_hp`, `stamina`.
-- **Frontend Action**: Hiển thị popup "Chúc mừng! Bạn nhận được NPC [Rarity]".
+- **When**: Player successfully recruits an NPC.
+- **Data**: `npc_id`, `rarity`, `profession`, `max_hp`, `stamina`.
+- **Frontend Action**: Display popup "Congratulations! You received a [Rarity] NPC".
 
 **2. `ExpeditionResultEvent`** (Module: `utils`)
 
-- **Khi nào**: Kết thúc thám hiểm.
-- **Dữ liệu**: `success` (bool), `resources_gained`, `items_gained`, `damage_taken`.
+- **When**: Expedition ends.
+- **Data**: `success` (bool), `resources_gained`, `items_gained`, `damage_taken`.
 - **Frontend Action**:
-  - Nếu `success = true`: Hiển thị màn hình chiến thắng, số resource nhận được.
-  - Nếu `success = false`: Hiển thị màn hình thất bại, số máu bị trừ.
-  - **QUAN TRỌNG**: Nếu `damage_taken` rất lớn (ví dụ 9999), đó là dấu hiệu DEATH/KNOCKOUT.
+  - If `success = true`: Show victory screen, resources received.
+  - If `success = false`: Show failure screen, health deducted.
+  - **IMPORTANT**: If `damage_taken` is very large (e.g., 9999), it indicates DEATH/KNOCKOUT.
 
 **3. `KnockoutEvent`** (Module: `utils`)
 
-- **Khi nào**: NPC bị đánh ngất (Knocked Out) do Critical Failure.
-- **Dữ liệu**: `npc_id`, `rarity`, `level`, `cause`.
-- **Frontend Action**: Hiển thị trạng thái "Bất tỉnh" (HP=0). Hiển thị 3 options:
-  - Dùng Revival Potion (nếu có)
-  - Đợi 1 giờ để tự hồi (natural recovery)
-  - Instant recovery (tốn 100 bunker resources)
+- **When**: NPC is Knocked Out due to Critical Failure.
+- **Data**: `npc_id`, `rarity`, `level`, `cause`.
+- **Frontend Action**: Show status "Unconscious" (HP=0). Display 3 options:
+  - Use Revival Potion (if available)
+  - Wait 1 hour for self-recovery (natural recovery)
+  - Instant recovery (costs 100 bunker resources)
 
 **4. `RaidResult`** (Module: `raid`) ⚔️ NEW!
 
-- **Khi nào**: Sau mỗi lần raid (Phase 4 - PvP)
-- **Dữ liệu**:
+- **When**: After each raid (Phase 4 - PvP)
+- **Data**:
   - `attacker`, `defender`: Addresses
-  - `attacker_npc_count`: Số NPC tham gia
-  - `success`: bool - Kẻ tấn công thắng hay thua
+  - `attacker_npc_count`: Number of NPCs involved
+  - `success`: bool - Whether attacker won or lost
   - `attacker_power`, `defender_power`: Combat powers
-  - `food_looted`, `water_looted`, `scrap_looted`: Tài nguyên cướp được
-  - `timestamp`: Thời điểm raid
+  - `food_looted`, `water_looted`, `scrap_looted`: Looted resources
+  - `timestamp`: Raid time
 - **Frontend Action**:
-  - Hiển thị kết quả chiến đấu với animation
-  - Nếu `success = true`: Show resources looted
-  - Nếu `success = false`: Show defense successful message
-  - Cập nhật bunker resources và raid history
+  - Show battle result with animation
+  - If `success = true`: Show resources looted
+  - If `success = false`: Show defense successful message
+  - Update bunker resources and raid history
 
 ---
 
-## 🎮 Tương Tác (Move Calls)
+## 🎮 Interactions (Move Calls)
 
-Sử dụng `TransactionBlock` để gọi hàm.
+Use `TransactionBlock` to call functions.
 
-### 1. Chiêu mộ NPC
+### 1. Recruit NPC
 
 - **Function**: `recruit_npc`
 - **Module**: `npc`
 - **Arguments**: `[Clock]`
-- **Payment**: Cần split coin 0.1 SUI để trả phí recruit.
-- **Lưu ý**: Cần truyền object `0x6` (Clock) vào argument.
+- **Payment**: Need to split coin 0.1 SUI to pay recruit fee.
+- **Note**: Pass `0x6` (Clock) as argument.
 
 ```typescript
-// Ví dụ với @mysten/dapp-kit
+// Example with @mysten/dapp-kit
 const tx = new TransactionBlock();
 const [coin] = tx.splitCoins(tx.gas, [tx.pure(100_000_000)]); // 0.1 SUI
 tx.moveCall({
@@ -96,14 +96,14 @@ tx.moveCall({
 });
 ```
 
-### 2. Bắt đầu Thám Hiểm (Expedition)
+### 2. Start Expedition
 
 - **Function**: `start_expedition`
 - **Module**: `expedition`
 - **Arguments**:
-  1. `npc`: Object ID của NPC.
-  2. `bunker`: Object ID của Bunker.
-  3. `duration`: Số giờ (u64).
+  1. `npc`: NPC Object ID.
+  2. `bunker`: Bunker Object ID.
+  3. `duration`: Hours (u64).
   4. `clock`: `0x6`.
 
 ### 3. Equip Item
@@ -111,122 +111,122 @@ tx.moveCall({
 - **Function**: `equip_item`
 - **Module**: `npc`
 - **Arguments**:
-  1. `npc`: Object ID của NPC.
-  2. `item`: Object ID của Item.
-  - **Lưu ý**: Không thể equip item loại `Collectible` (Type 99), `Food` (Type 6), hoặc `Revival Potion` (Type 5). Frontend nên filter list item này khi hiển thị dialog Equip.
+  1. `npc`: NPC Object ID.
+  2. `item`: Item Object ID.
+  - **Note**: Cannot equip `Collectible` (Type 99), `Food` (Type 6), or `Revival Potion` (Type 5). Frontend should filter these items when showing Equip dialog.
 
 ### 4. Unequip Item (Multi-Slot System v2.0)
 
 - **Functions**:
-  - `unequip_weapon` - Unequip slot weapon
-  - `unequip_armor` - Unequip slot armor
+  - `unequip_weapon` - Unequip weapon slot
+  - `unequip_armor` - Unequip armor slot
   - `unequip_tool_1` - Unequip tool slot 1
   - `unequip_tool_2` - Unequip tool slot 2
 - **Module**: `npc`
 - **Arguments**:
-  1. `npc`: Object ID của NPC.
+  1. `npc`: NPC Object ID.
   2. `clock`: `0x6`
-- **Lưu ý**: NPC có 4 equipment slots riêng biệt. Chọn function tương ứng với slot muốn unequip.
+- **Note**: NPC has 4 separate equipment slots. Choose function corresponding to the slot you want to unequip.
 
-### 5. Hồi sinh NPC (Revive)
+### 5. Revive NPC
 
 - **Function**: `revive_npc`
 - **Module**: `npc`
 - **Arguments**:
-  1. `npc`: Object ID của NPC.
-  2. `potion`: Object ID của Revival Potion (Item Type 5).
+  1. `npc`: NPC Object ID.
+  2. `potion`: Revival Potion Object ID (Item Type 5).
   3. `clock`: `0x6`.
 
-### 6. Sử dụng Thức Ăn (Consume Food)
+### 6. Use Food (Consume Food)
 
 - **Function**: `consume_food`
 - **Module**: `npc`
 - **Arguments**:
-  1. `npc`: Object ID của NPC.
-  2. `food`: Object ID của Food (Item Type 6).
+  1. `npc`: NPC Object ID.
+  2. `food`: Food Object ID (Item Type 6).
   3. `clock`: `0x6`.
 
 ### 7. Recovery & Knockout System (v2.0)
 
-**Natural Recovery** (sau 1 giờ):
+**Natural Recovery** (after 1 hour):
 
 - **Function**: `recover_npc`
 - **Module**: `npc`
 - **Arguments**: `npc`, `clock`
-- **Effect**: Hồi 60% HP/Stamina
+- **Effect**: Recover 60% HP/Stamina
 
-**Instant Recovery** (tốn 100 resources):
+**Instant Recovery** (costs 100 resources):
 
 - **Function**: `instant_recover_npc`
 - **Module**: `npc`
 - **Arguments**: `npc`, `bunker`, `clock`
-- **Effect**: Hồi 80% HP/Stamina ngay lập tức
+- **Effect**: Recover 80% HP/Stamina immediately
 
 **Check Functions**:
 
-- `is_knocked(npc)` - Check NPC có đang knocked không
-- `can_recover(npc, clock)` - Check đã đủ thời gian recovery chưa
-- `get_recovery_time_remaining(npc, clock)` - Lấy thời gian còn lại (ms)
+- `is_knocked(npc)` - Check if NPC is knocked
+- `can_recover(npc, clock)` - Check if recovery time reached
+- `get_recovery_time_remaining(npc, clock)` - Get remaining time (ms)
 
 ### 8. View Functions (Frontend Helpers)
 
 **NPC Info**:
 
-- `get_npc_summary(npc)` - Lấy 10 fields quan trọng nhất
-- `can_go_expedition(npc)` - Check sẵn sàng thám hiểm
-- `can_equip_items(npc)` - Check có thể equip không
-- `get_equipped_slots_count(npc)` - Đếm equipment slots đang dùng
+- `get_npc_summary(npc)` - Get 10 most important fields
+- `can_go_expedition(npc)` - Check readiness for expedition
+- `can_equip_items(npc)` - Check if can equip
+- `get_equipped_slots_count(npc)` - Count occupied equipment slots
 
 **Equipment Checks**:
 
-- `has_weapon_equipped(npc)` - Check có weapon không
-- `has_armor_equipped(npc)` - Check có armor không
+- `has_weapon_equipped(npc)` - Check if weapon equipped
+- `has_armor_equipped(npc)` - Check if armor equipped
 - `has_tool_1_equipped(npc)` - Check tool slot 1
 - `has_tool_2_equipped(npc)` - Check tool slot 2
-- `get_equipped_bonus(npc)` - Lấy tổng bonuses từ TẤT CẢ slots
+- `get_equipped_bonus(npc)` - Get total bonuses from ALL slots
 
 **Inventory**:
 
-- `is_inventory_full(npc)` - Check inventory đầy chưa
-- `get_inventory_count(npc)` - Số items trong inventory
+- `is_inventory_full(npc)` - Check if inventory full
+- `get_inventory_count(npc)` - Number of items in inventory
 
 ---
 
-## 🐛 Mapping Lỗi (Error Codes)
+## 🐛 Error Codes Mapping
 
-Nếu transaction thất bại, check error code:
+If transaction fails, check error code:
 
-| Mã Lỗi  | Module     | Ý nghĩa                                                                                         |
-| :------ | :--------- | :---------------------------------------------------------------------------------------------- |
-| **400** | expedition | `E_NPC_NOT_READY` - NPC đang bận hoặc quá mệt.                                                  |
-| **402** | expedition | `E_INVALID_DURATION` - Thời gian không hợp lệ.                                                  |
-| **101** | npc        | `E_INSUFFICIENT_FUNDS` - Không đủ tiền recruit.                                                 |
-| **105** | npc        | `E_NOT_OWNER` - Thao tác trên NPC/Bunker không phải của mình.                                   |
-| **208** | npc        | `E_INVALID_ITEM` - Item dùng không đúng loại (ví dụ lấy gậy đập vào miệng để hồi máu).          |
-| **209** | npc        | `E_CANNOT_EQUIP_THIS_ITEM` - Cố tình equip item không phải vũ khí/giáp (như Food, Collectible). |
+| Error Code | Module     | Meaning                                                                                      |
+| :--------- | :--------- | :------------------------------------------------------------------------------------------- |
+| **400**    | expedition | `E_NPC_NOT_READY` - NPC is busy or too tired.                                                |
+| **402**    | expedition | `E_INVALID_DURATION` - Invalid duration.                                                     |
+| **101**    | npc        | `E_INSUFFICIENT_FUNDS` - Not enough funds to recruit.                                        |
+| **105**    | npc        | `E_NOT_OWNER` - Operation on NPC/Bunker not owned by you.                                    |
+| **208**    | npc        | `E_INVALID_ITEM` - Item used incorrectly (e.g., using a stick to eat for health).            |
+| **209**    | npc        | `E_CANNOT_EQUIP_THIS_ITEM` - Trying to equip non-weapon/armor item (like Food, Collectible). |
 
 ---
 
-## 📝 Quy trình gợi ý cho Frontend
+## 📝 Suggested Frontend Workflow
 
-1.  **Màn hình Home**:
+1.  **Home Screen**:
 
-    - Query tất cả object type `NPC` mà user sở hữu.
+    - Query all object type `NPC` owned by user.
     - Query object `Bunker`.
-    - Hiển thị danh sách. Check `current_hp` để xem có NPC nào đang Knocked Out không.
+    - Display list. Check `current_hp` to see if any NPC is Knocked Out.
 
-2.  **Khi User bấm "Recruit"**:
+2.  **When User clicks "Recruit"**:
 
-    - Gửi transaction `recruit_npc`.
-    - Subscribe event `RecruitEvent` để biết kết quả (vì ID NPC mới sẽ nằm trong event).
-    - Sau khi có event -> Refresh danh sách NPC.
+    - Send transaction `recruit_npc`.
+    - Subscribe to `RecruitEvent` for result (new NPC ID is in event).
+    - After event -> Refresh NPC list.
 
-3.  **Khi User bấm "Thám hiểm"**:
-    - Cho user chọn giờ.
-    - Gửi transaction `start_expedition`.
+3.  **When User clicks "Expedition"**:
+    - Let user select hours.
+    - Send transaction `start_expedition`.
     - Show loading...
-    - Đợi event `ExpeditionResultEvent`.
-    - Dựa vào event để hiện popup kết quả.
+    - Wait for `ExpeditionResultEvent`.
+    - Show result popup based on event.
 
 ---
 
@@ -243,4 +243,4 @@ Nếu transaction thất bại, check error code:
 
 ---
 
-_Tài liệu này được tạo và cập nhật bởi Antigravity Agent - Last updated: 2025-12-22_
+_This document is created and updated by Antigravity Agent - Last updated: 2025-12-22_

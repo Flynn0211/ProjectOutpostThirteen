@@ -1,17 +1,17 @@
-# Hướng dẫn cập nhật Contract
+# Contract Update Guide
 
-Lỗi bạn gặp phải là do **Frontend** đã gửi tên mới đi, nhưng **Contract** trên mạng vẫn là phiên bản cũ (chưa nhận tham số tên).
+The error you are encountering is because the **Frontend** sent a new name, but the **Contract** on the network is still the old version (does not accept the name parameter yet).
 
-Để sửa lỗi này, bạn cần publish phiên bản code mới nhất lên mạng lưới Sui:
+To fix this, you need to publish the latest code version to the Sui network:
 
-1.  Mở Terminal (Ctrl+`).
-2.  Chạy lệnh sau để deploy:
+1.  Open Terminal (Ctrl+`).
+2.  Run the following command to deploy:
     ```bash
-    sui client publish --gas-budget 100000000 contracts
+    sui client publish --gas-budget 100000000 Contracts
     ```
-3.  Sau khi chạy thành công, tìm dòng **packageId** trong kết quả (thường bắt đầu bằng `0x...`).
-4.  Copy packageId đó.
-5.  Mở file `frontend/src/constants.ts`.
-6.  Thay thế giá trị `PACKAGE_ID` cũ bằng cái mới.
+3.  After successful run, look for **packageId** line in the result (usually starts with `0x...`).
+4.  Copy that packageId.
+5.  Open `frontend/src/constants.ts` file.
+6.  Replace the old `PACKAGE_ID` value with the new one.
 
-Sau đó thử lại, lỗi sẽ biến mất!
+Then try again, the error should be gone!

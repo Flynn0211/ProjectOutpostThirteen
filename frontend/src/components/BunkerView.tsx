@@ -20,8 +20,8 @@ export function BunkerView({ onBunkerLoaded, refreshTick, onOpenRoomDetail, onOp
   const account = useCurrentAccount();
   const ownerAddress = account?.address ?? "";
 
-  const bunkersQuery = useOwnedBunkers(ownerAddress);
-  const npcsQuery = useOwnedNpcs(ownerAddress);
+  const bunkersQuery = useOwnedBunkers(ownerAddress, { refetchInterval: false });
+  const npcsQuery = useOwnedNpcs(ownerAddress, { refetchInterval: false });
 
   useSuiEventSubscriptions({ ownerAddress });
 

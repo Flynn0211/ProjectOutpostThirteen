@@ -26,7 +26,7 @@ function retryDelayMs(failureCount: number, error: unknown): number {
   return delay + jitter;
 }
 
-export function useOwnedBunkers(ownerAddress: string) {
+export function useOwnedBunkers(ownerAddress: string, options?: { refetchInterval?: number | false }) {
   return useQuery({
     queryKey: queryKeys.bunkers(ownerAddress),
     enabled: !!ownerAddress,
@@ -34,7 +34,7 @@ export function useOwnedBunkers(ownerAddress: string) {
       const objs = await getOwnedObjectsStrict(ownerAddress, getObjectType("bunker", "Bunker"));
       return (objs as Bunker[]).filter((b) => !!b && !!(b as any).id);
     },
-    refetchInterval: DEFAULT_REFETCH_INTERVAL_MS,
+    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     staleTime: DEFAULT_STALE_TIME_MS,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
@@ -44,7 +44,7 @@ export function useOwnedBunkers(ownerAddress: string) {
   });
 }
 
-export function useOwnedNpcs(ownerAddress: string) {
+export function useOwnedNpcs(ownerAddress: string, options?: { refetchInterval?: number | false }) {
   return useQuery({
     queryKey: queryKeys.npcs(ownerAddress),
     enabled: !!ownerAddress,
@@ -52,7 +52,7 @@ export function useOwnedNpcs(ownerAddress: string) {
       const objs = await getOwnedObjectsStrict(ownerAddress, getObjectType("npc", "NPC"));
       return (objs as NPC[]).filter((n) => !!n && !!(n as any).id);
     },
-    refetchInterval: DEFAULT_REFETCH_INTERVAL_MS,
+    refetchInterval: options?.refetchInterval ?? DEFAULT_REFETCH_INTERVAL_MS,
     staleTime: DEFAULT_STALE_TIME_MS,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,

@@ -194,6 +194,9 @@ export function Toolbar({ activeTab, onTabChange, bunkerId, onRefresh, hideBar }
       <NPCManagerModal
         isOpen={activeTab === "npc-manager"}
         onClose={() => onTabChange(null)}
+        onOpenInventory={() => {
+          onTabChange("inventory");
+        }}
       />
 
       {bunkerId && (

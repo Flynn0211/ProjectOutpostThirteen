@@ -2,11 +2,11 @@
 // - VITE_PACKAGE_ID=0x...
 // - VITE_NETWORK=testnet|mainnet
 // Defaults are set to the current testnet deployment; override in `.env.local` as needed.
-const DEFAULT_PACKAGE_ID = "0x8b3bf7f884ea20f84ada8a084a769321105154473a2c97b64a1c425357a50228";
+const DEFAULT_PACKAGE_ID = "0xbc518133d1745edd7fdf8c1503e01ed9e187164299c8ac5b8f38a502a2a821b5";
 const DEFAULT_NETWORK = "testnet" as const;
-const DEFAULT_BUNKER_NPC_LEDGER_ID = "0x7f9e84110395505c81f8c61b89d8dd375fdf9e1a122eb7a0586a6f90c94912c4";
-const DEFAULT_RAID_HISTORY_ID = "0xcde4fcb1bd8d004cfe12c3551fc3527f1cbcd65b5d004d881f50676fadeaed1c";
-const DEFAULT_MARKETPLACE_OBJECT_ID = "0x4a1c4a7c4f5ac798ebd8233bd8189cedc0f01a4b69a4ac96accd5d9eaa13c71f";
+const DEFAULT_BUNKER_NPC_LEDGER_ID = "0x1fc51236f6e55b99ba9fa67f76756481454b13d98cbf0a99eaa2a9991abb41e7";
+const DEFAULT_RAID_HISTORY_ID = "0x6ec3c50947da18d0ecb87c37f15e39d78e7e64ab9af56943daee9b13e7bd3d97";
+const DEFAULT_MARKETPLACE_OBJECT_ID = "0x90dbcf066b0fb008cd65185258a91e2ad259c99946a2fee20804b34f4bc51f2a";
 
 export const PACKAGE_ID = (import.meta.env.VITE_PACKAGE_ID as string | undefined) ?? DEFAULT_PACKAGE_ID;
 export const NETWORK = ((import.meta.env.VITE_NETWORK as string | undefined) ?? DEFAULT_NETWORK) as "testnet" | "mainnet";

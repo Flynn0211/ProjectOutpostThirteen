@@ -1,73 +1,46 @@
-# React + TypeScript + Vite
+# Frontend (React / Vite)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Web client for Project Outpost Thirteen.
 
-Currently, two official plugins are available:
+## Requirements
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Node.js 18+ recommended
+- A Sui wallet in the browser (for testnet)
 
-## React Compiler
+## Install
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+From this directory:
 
-## Expanding the ESLint configuration
+- `npm install`
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Run (dev)
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+- `npm run dev`
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## Build
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+- `npm run build`
+
+## Configuration
+
+The app reads Sui network + contract IDs from Vite env vars. Defaults are provided in `src/constants.ts`, but for local development you should prefer `.env.local`.
+
+Create `frontend/.env.local`:
+
+```bash
+VITE_NETWORK=testnet
+VITE_PACKAGE_ID=0x...
+VITE_MARKETPLACE_ID=0x...
+VITE_RAID_HISTORY_ID=0x...
+VITE_BUNKER_NPC_LEDGER_ID=0x...
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Notes:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- Republish creates a new `PACKAGE_ID` and new shared object IDs; update all of them.
+- After republish, old objects from previous package versions will not decode; test with freshly created NPCs/Bunkers.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+## Useful docs
+
+- Deployment / testnet workflow: [../contracts_readme.md](../contracts_readme.md)
+- Frontend ↔ contract integration notes: [../FRONTEND_GUIDE.md](../FRONTEND_GUIDE.md)

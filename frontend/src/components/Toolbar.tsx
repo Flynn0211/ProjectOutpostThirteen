@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import { InventoryModal } from "./InventoryModal";
 import { RaidModal } from "./RaidModal";
 import { MarketplaceModal } from "./MarketplaceModal";
@@ -33,9 +33,6 @@ export function Toolbar({ activeTab, onTabChange, bunkerId, onRefresh, hideBar }
 
   const controlPanelClickCountRef = useRef(0);
   const controlPanelResetTimerRef = useRef<number | null>(null);
-  
-  // State to pass target NPC to inventory when switching from NPC Manager
-  const [targetNpcForInventory, setTargetNpcForInventory] = useState<string | undefined>(undefined);
 
   const baseButton = "px-6 py-6 rounded-xl text-sm font-bold transition-all duration-300 border-2 uppercase tracking-wider relative overflow-hidden group";
   const inactive = "bg-gradient-to-br from-[#2a3447] to-[#1a1f2e] text-[#4deeac] border-[#4deeac] hover:border-[#5fffc0] hover:shadow-[0_0_20px_rgba(77,238,172,0.5)] hover:scale-105 hover:-translate-y-0.5";
@@ -166,11 +163,8 @@ export function Toolbar({ activeTab, onTabChange, bunkerId, onRefresh, hideBar }
 
       <InventoryModal
         isOpen={activeTab === "inventory"}
-        onClose={() => {
-            onTabChange(null);
-            setTargetNpcForInventory(undefined);
-        }}
-        initialSelectedNpcId={targetNpcForInventory}
+        onClose={() => onTabChange(null)}
+        bunkerId={bunkerId ?? undefined}
       />
       {bunkerId && (
         <>
@@ -200,10 +194,6 @@ export function Toolbar({ activeTab, onTabChange, bunkerId, onRefresh, hideBar }
       <NPCManagerModal
         isOpen={activeTab === "npc-manager"}
         onClose={() => onTabChange(null)}
-        onOpenInventory={(npcId) => {
-            setTargetNpcForInventory(npcId);
-            onTabChange("inventory");
-        }}
       />
 
       {bunkerId && (

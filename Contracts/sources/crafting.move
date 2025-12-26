@@ -7,6 +7,7 @@ module contracts::crafting {
     use sui::tx_context::TxContext;
     use sui::transfer;
     use sui::clock::Clock;
+    use std::option::{Self as option, Option};
     
     use contracts::utils;
     use contracts::item;
@@ -17,6 +18,9 @@ module contracts::crafting {
     const E_INSUFFICIENT_SCRAP: u64 = 1101;         // Không đủ phế liệu
     const E_NOT_OWNER: u64 = 1103;                  // Không phải chủ sở hữu
     const E_BLUEPRINT_NOT_EXHAUSTED: u64 = 1104;    // Blueprint chưa hết (không thể xóa)
+    const E_INVALID_ITEM: u64 = 1105;
+    const E_WORKSHOP_REQUIRED: u64 = 1106;
+    const E_WORKSHOP_NO_POWER: u64 = 1107;
 
     
     // ==================== CONSTANTS ====================
@@ -76,6 +80,11 @@ module contracts::crafting {
         let sender = tx_context::sender(ctx);
         assert!(bunker::get_owner(bunker) == sender, E_NOT_OWNER);
         assert!(blueprint.uses_remaining > 0, E_BLUEPRINT_EXHAUSTED);
+
+        // All crafting must happen in a powered Workshop.
+        let workshop_opt = bunker::get_first_room_index_by_type(bunker, bunker::room_type_workshop());
+        assert!(option::is_some(&workshop_opt), E_WORKSHOP_REQUIRED);
+        assert!(bunker::is_power_sufficient(bunker), E_WORKSHOP_NO_POWER);
         
         // Get crafting cost
         let scrap_cost = get_crafting_cost(blueprint.item_type);
@@ -128,6 +137,37 @@ module contracts::crafting {
         
         let Blueprint { id, item_type: _, rarity: _, uses_remaining: _, max_uses: _ } = blueprint;
         object::delete(id);
+    }
+
+    /// Craft Bandage from a Cloth item (no scrap cost). Requires powered Workshop.
+    public entry fun craft_bandage_from_cloth(
+        cloth: item::Item,
+        bunker: &mut Bunker,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        let sender = tx_context::sender(ctx);
+
+        assert!(bunker::get_owner(bunker) == sender, E_NOT_OWNER);
+
+        let workshop_opt = bunker::get_first_room_index_by_type(bunker, bunker::room_type_workshop());
+        assert!(option::is_some(&workshop_opt), E_WORKSHOP_REQUIRED);
+        assert!(bunker::is_power_sufficient(bunker), E_WORKSHOP_NO_POWER);
+
+        assert!(item::get_item_type(&cloth) == item::type_cloth(), E_INVALID_ITEM);
+        item::destroy_item(cloth);
+
+        let bandage = item::create_bandage(ctx);
+        let bandage_id = object::id(&bandage);
+        transfer::public_transfer(bandage, sender);
+
+        utils::emit_item_crafted_event(
+            bandage_id,
+            sender,
+            item::type_bandage(),
+            0,
+            clock
+        );
     }
     
     // ==================== VIEW FUNCTIONS ====================

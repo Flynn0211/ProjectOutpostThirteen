@@ -189,6 +189,8 @@ export const ITEM_TYPES = {
   REVIVAL_POTION: 5,
   FOOD: 6,
   WATER: 7,
+  CLOTH: 8,
+  BANDAGE: 9,
   COLLECTIBLE: 99,
 } as const;
 

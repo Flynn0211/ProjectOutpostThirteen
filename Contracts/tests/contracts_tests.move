@@ -20,7 +20,7 @@ module contracts::contracts_tests {
         assert!(bunker::get_capacity(&bunker) == 20, 1);
 
         bunker::upgrade_room(&mut bunker, 0, &mut ctx);
-        assert!(bunker::get_capacity(&bunker) == 22, 2);
+        assert!(bunker::get_capacity(&bunker) == 23, 2);
 
         bunker::destroy_bunker_for_testing(bunker);
     }
@@ -35,8 +35,8 @@ module contracts::contracts_tests {
 
         let mut bunker = bunker::new_bunker_for_testing(owner, &mut ctx);
         // Farm is room index 2 in the initial bunker.
-        bunker::increment_room_workers(&mut bunker, 2, &clock_obj);
-        bunker::increment_room_workers(&mut bunker, 2, &clock_obj);
+        bunker::increment_room_workers(&mut bunker, 2, 0, false, &clock_obj);
+        bunker::increment_room_workers(&mut bunker, 2, 0, false, &clock_obj);
 
         let initial_food = bunker::get_food(&bunker);
 

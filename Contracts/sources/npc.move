@@ -144,10 +144,50 @@ module contracts::npc {
         // ✅ Phase 1: Working system
         assigned_room: Option<u64>,  // Room index NPC đang làm việc (None nếu không)
         work_started_at: u64,        // Timestamp bắt đầu làm
+        work_bonus_pct: u64,         // Work bonus % snapshot for consistent bookkeeping
         
         // ✅ Phase 1: Strength stat
         strength: u64,               // Sức mạnh (for workshop efficiency)
+
+        // Combat baseline stats (separate from equipment bonuses)
+        combat_damage: u64,
+        combat_defense: u64,
         // Dynamic field sẽ được dùng để attach equipped items và inventory items
+    }
+
+    fun clamp_bonus_pct(pct: u64): u64 {
+        if (pct < 10) {
+            10
+        } else if (pct > 20) {
+            20
+        } else {
+            pct
+        }
+    }
+
+    fun compute_work_bonus_pct(npc: &NPC, room_type: u8): u64 {
+        let mut bonus = 10;
+
+        if (has_skill(npc, SKILL_FAST_WORKER)) {
+            bonus = bonus + 5;
+        };
+
+        if (
+            npc.profession == 1 &&
+            (room_type == bunker::room_type_generator() || room_type == bunker::room_type_workshop())
+        ) {
+            bonus = bonus + 5;
+        };
+
+        clamp_bonus_pct(bonus)
+    }
+
+    fun base_combat_damage(rarity: u8): u64 {
+        10 + ((rarity as u64) * 5)
+    }
+
+    fun base_combat_defense(rarity: u8): u64 {
+        5 + ((rarity as u64) * 5)
     }
 
     // ==================== RECRUITMENT ====================
@@ -249,7 +289,10 @@ module contracts::npc {
             inventory_count: 0,           // Inventory trống
             assigned_room: option::none(), // Chưa work
             work_started_at: 0,
+            work_bonus_pct: 0,
             strength,
+            combat_damage: base_combat_damage(rarity),
+            combat_defense: base_combat_defense(rarity),
         };
         
         let npc_id = object::uid_to_address(&npc.id);
@@ -740,14 +783,18 @@ module contracts::npc {
         if (room_type != bunker::room_type_generator()) {
             assert!(bunker::is_power_sufficient(bunker), E_INSUFFICIENT_POWER);
         };
+
+        let work_bonus_pct = compute_work_bonus_pct(npc, room_type);
+        let is_engineer = npc.profession == 1;
         
         // Assign
         npc.status = STATUS_WORKING;
         npc.assigned_room = option::some(room_index);
         npc.work_started_at = clock::timestamp_ms(clock);
+        npc.work_bonus_pct = work_bonus_pct;
         
         // Update room
-        bunker::increment_room_workers(bunker, room_index, clock);
+        bunker::increment_room_workers(bunker, room_index, work_bonus_pct, is_engineer, clock);
         
         // Emit event
         utils::emit_work_assigned_event(
@@ -770,6 +817,8 @@ module contracts::npc {
         assert!(npc.status == STATUS_WORKING, E_NPC_NOT_WORKING);
         
         let room_index = *option::borrow(&npc.assigned_room);
+        let work_bonus_pct = npc.work_bonus_pct;
+        let is_engineer = npc.profession == 1;
         
         // Update survival stats based on work time
         let current_time = clock::timestamp_ms(clock);
@@ -780,9 +829,10 @@ module contracts::npc {
         npc.status = STATUS_IDLE;
         npc.assigned_room = option::none();
         npc.work_started_at = 0;
+        npc.work_bonus_pct = 0;
         
         // Update room
-        bunker::decrement_room_workers(bunker, room_index, clock);
+        bunker::decrement_room_workers(bunker, room_index, work_bonus_pct, is_engineer, clock);
     }
     
     /// Phase 1: Feed NPC using bunker resources
@@ -973,6 +1023,7 @@ module contracts::npc {
         food: Item,
         _clock: &Clock // unused for now but good for future events
     ) {
+        assert!(!is_knocked(npc), E_INVALID_STATUS);
         // Kiểm tra đúng là Food (Type 6)
         assert!(item::get_item_type(&food) == item::type_food(), E_INVALID_ITEM);
         
@@ -991,6 +1042,7 @@ module contracts::npc {
         water_item: Item,
         _clock: &Clock
     ) {
+        assert!(!is_knocked(npc), E_INVALID_STATUS);
         assert!(item::get_item_type(&water_item) == item::type_water(), E_INVALID_ITEM);
         item::destroy_item(water_item);
 
@@ -1004,6 +1056,7 @@ module contracts::npc {
         medicine: Item,
         _clock: &Clock
     ) {
+        assert!(!is_knocked(npc), E_INVALID_STATUS);
         // Kiểm tra đúng là Medicine (dùng type_medicine constant)
         assert!(item::get_item_type(&medicine) == item::type_medicine(), E_INVALID_ITEM);
         
@@ -1024,6 +1077,20 @@ module contracts::npc {
         let nourish = heal_amount / 2;
         feed_npc(npc, nourish);
         give_water(npc, nourish);
+    }
+
+    /// Use Bandage to heal a small amount (weaker than Medicine). Cannot revive knocked NPC.
+    public entry fun consume_bandage(
+        npc: &mut NPC,
+        bandage: Item,
+        _clock: &Clock
+    ) {
+        assert!(!is_knocked(npc), E_INVALID_STATUS);
+        assert!(item::get_item_type(&bandage) == item::type_bandage(), E_INVALID_ITEM);
+        item::destroy_item(bandage);
+
+        heal_npc(npc, 15);
+        restore_stamina(npc, 5);
     }
     
     /// Entry function: Add item vào inventory (dành cho frontend/player)
@@ -1224,7 +1291,10 @@ module contracts::npc {
             inventory_count: 0,
             assigned_room: option::none(),
             work_started_at: 0,
+            work_bonus_pct: 0,
             strength: 10,
+            combat_damage: 10,
+            combat_defense: 5,
         }
     }
 
@@ -1251,7 +1321,10 @@ module contracts::npc {
             inventory_count: _,
             assigned_room: _,
             work_started_at: _,
+            work_bonus_pct: _,
             strength: _,
+            combat_damage: _,
+            combat_defense: _,
         } = npc;
         id.delete();
     }

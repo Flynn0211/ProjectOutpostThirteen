@@ -10,9 +10,11 @@ module contracts::bunker {
     use sui::clock::Clock;
     use sui::table::{Self as table, Table};
     use std::vector;
+    use std::option::{Self as option, Option};
     use std::string::{Self, String};
     
     use contracts::utils;
+    use contracts::item;
 
     // ==================== MÃ LỖI ====================
     const E_NOT_OWNER: u64 = 300;               // Không phải chủ sở hữu
@@ -23,6 +25,11 @@ module contracts::bunker {
     const E_INSUFFICIENT_SCRAP: u64 = 306;      // Không đủ phế liệu
     const E_ROOM_FULL: u64 = 308;               // Phòng đã đầy
     const E_NPC_COUNT_UNDERFLOW: u64 = 309;     // NPC count underflow
+
+    // Repair / crafting gating
+    const E_ITEM_NOT_DAMAGED: u64 = 310;
+    const E_WORKSHOP_REQUIRED: u64 = 311;
+    const E_WORKSHOP_NO_POWER: u64 = 312;
 
     // ==================== HẰNG SỐ ====================
     
@@ -74,6 +81,9 @@ module contracts::bunker {
 
     // Storage utility (passive)
     const STORAGE_POWER_REDUCTION_PER_LEVEL: u64 = 2;
+
+    // Extra farm byproduct
+    const FARM_CLOTH_PER_FOOD: u64 = 500;
     
     // Room types
     const ROOM_TYPE_LIVING: u8 = 0;
@@ -106,6 +116,10 @@ module contracts::bunker {
         is_assignable_room_type(room_type)
     }
 
+    fun avg_pct(sum_pct: u64, count: u64): u64 {
+        if (count == 0) { 0 } else { sum_pct / count }
+    }
+
     fun update_room_accumulated(room: &mut Room, current_time: u64) {
         let is_production_room = room.room_type == ROOM_TYPE_FARM
             || room.room_type == ROOM_TYPE_WATER_PUMP
@@ -117,14 +131,24 @@ module contracts::bunker {
         let ticks = time_elapsed / PRODUCTION_TICK_MS;
         if (ticks == 0) return;
 
+        // Apply NPC skill bonus (10-20%) tracked on the room.
+        let worker_bonus_pct = avg_pct(room.work_bonus_sum_pct, room.assigned_npcs);
+
         // Carry fractional production forward to prevent rounding loss when collecting frequently.
-        // production = (rate * workers * ticks * efficiency) / (100 * ticks_per_hour)
-        let denom = 100 * PRODUCTION_TICKS_PER_HOUR; // 600
-        let numerator = room.production_rate * room.assigned_npcs * ticks * room.efficiency;
-        let total = room.production_remainder + numerator;
-        let production = total / denom;
-        room.production_remainder = total % denom;
-        room.accumulated = room.accumulated + production;
+        // production = (rate * workers * ticks * efficiency% * (100+bonus)% ) / (100 * 100 * ticks_per_hour)
+        let denom_u128 = (100u128) * (100u128) * (PRODUCTION_TICKS_PER_HOUR as u128);
+        let numerator_u128 = (room.production_rate as u128)
+            * (room.assigned_npcs as u128)
+            * (ticks as u128)
+            * (room.efficiency as u128)
+            * ((100 + worker_bonus_pct) as u128);
+
+        let total_u128 = (room.production_remainder as u128) + numerator_u128;
+        let production_u128 = total_u128 / denom_u128;
+        let remainder_u128 = total_u128 % denom_u128;
+
+        room.production_remainder = remainder_u128 as u64;
+        room.accumulated = room.accumulated + (production_u128 as u64);
         room.last_collected_at = room.last_collected_at + (ticks * PRODUCTION_TICK_MS);
     }
 
@@ -181,6 +205,14 @@ module contracts::bunker {
         last_collected_at: u64,    // Timestamp lần claim cuối
         accumulated: u64,          // Production chưa claim
         production_remainder: u64, // Remainder (mod 100*ticks_per_hour)
+
+        // Sum of per-worker work bonuses (percent) from assigned NPCs.
+        // Effective bonus = avg(work_bonus_sum_pct / assigned_npcs).
+        work_bonus_sum_pct: u64,
+
+        // Engineer-only bookkeeping for Workshop repairs.
+        engineer_workers: u64,
+        engineer_bonus_sum_pct: u64,
     }
 
     /// Bunker - Căn cứ chính (v2.0: Split resources)
@@ -271,6 +303,9 @@ module contracts::bunker {
             last_collected_at: 0,
             accumulated: 0,
             production_remainder: 0,
+            work_bonus_sum_pct: 0,
+            engineer_workers: 0,
+            engineer_bonus_sum_pct: 0,
         });
         
         // Generator - Máy phát điện
@@ -284,6 +319,9 @@ module contracts::bunker {
             last_collected_at: 0,
             accumulated: 0,
             production_remainder: 0,
+            work_bonus_sum_pct: 0,
+            engineer_workers: 0,
+            engineer_bonus_sum_pct: 0,
         });
         
         // Farm - Nông trại
@@ -297,6 +335,9 @@ module contracts::bunker {
             last_collected_at: 0,
             accumulated: 0,
             production_remainder: 0,
+            work_bonus_sum_pct: 0,
+            engineer_workers: 0,
+            engineer_bonus_sum_pct: 0,
         });
         
         // Water Pump - Máy bơm nước
@@ -310,6 +351,9 @@ module contracts::bunker {
             last_collected_at: 0,
             accumulated: 0,
             production_remainder: 0,
+            work_bonus_sum_pct: 0,
+            engineer_workers: 0,
+            engineer_bonus_sum_pct: 0,
         });
 
         let mut bunker = Bunker {
@@ -474,6 +518,9 @@ module contracts::bunker {
             last_collected_at: 0,
             accumulated: 0,
             production_remainder: 0,
+            work_bonus_sum_pct: 0,
+            engineer_workers: 0,
+            engineer_bonus_sum_pct: 0,
         };
         
         vector::push_back(&mut bunker.rooms, new_room);
@@ -515,6 +562,54 @@ module contracts::bunker {
     public fun consume_scrap(bunker: &mut Bunker, amount: u64) {
         assert!(bunker.scrap >= amount, E_INSUFFICIENT_SCRAP);
         bunker.scrap = bunker.scrap - amount;
+    }
+
+    /// Repair an item to full durability.
+    /// Enforced here (instead of in `contracts::item`) to avoid dependency cycles.
+    public entry fun repair_item(
+        item: &mut item::Item,
+        bunker: &mut Bunker,
+        mut payment: sui::coin::Coin<sui::sui::SUI>,
+        clock: &Clock,
+        ctx: &mut TxContext
+    ) {
+        use sui::coin;
+
+        let sender = tx_context::sender(ctx);
+        assert!(get_owner(bunker) == sender, E_NOT_OWNER);
+
+        // Must have a Workshop and sufficient power to repair.
+        let workshop_opt = get_first_room_index_by_type(bunker, room_type_workshop());
+        assert!(option::is_some(&workshop_opt), E_WORKSHOP_REQUIRED);
+        assert!(is_power_sufficient(bunker), E_WORKSHOP_NO_POWER);
+        let workshop_index = *option::borrow(&workshop_opt);
+        let engineer_discount_pct = get_room_engineer_avg_bonus_pct(bunker, workshop_index);
+
+        // Calculate damage
+        let durability_lost = item::get_max_durability(item) - item::get_durability(item);
+        assert!(durability_lost > 0, E_ITEM_NOT_DAMAGED);
+
+        // Calculate costs (V2 formula)
+        let scrap_cost = item::compute_repair_scrap_cost(item, engineer_discount_pct);
+
+        // Consume scrap from bunker
+        consume_scrap(bunker, scrap_cost);
+
+        // Keep signature compatibility: return (or destroy) the provided payment coin.
+        if (coin::value(&payment) > 0) { transfer::public_transfer(payment, sender); }
+        else { coin::destroy_zero(payment); };
+
+        // Restore durability
+        item::set_durability_to_max(item);
+
+        // Emit event
+        utils::emit_item_repaired_event(
+            object::id(item),
+            sender,
+            durability_lost,
+            scrap_cost,
+            clock
+        );
     }
     
     // Legacy function for backward compatibility (will be deprecated)
@@ -563,6 +658,17 @@ module contracts::bunker {
         // Add to bunker based on room type
         if (room_type == ROOM_TYPE_FARM) {
             add_food(bunker, accumulated_amount);
+
+            // Small cloth yield as a byproduct (minted items).
+            let cloth_count = accumulated_amount / FARM_CLOTH_PER_FOOD;
+            if (cloth_count > 0) {
+                let mut i = 0;
+                while (i < cloth_count) {
+                    let cloth = item::create_cloth(ctx);
+                    transfer::public_transfer(cloth, bunker.owner);
+                    i = i + 1;
+                };
+            };
         } else if (room_type == ROOM_TYPE_WATER_PUMP) {
             add_water(bunker, accumulated_amount);
         } else if (room_type == ROOM_TYPE_WORKSHOP) {
@@ -618,6 +724,7 @@ module contracts::bunker {
             let room = vector::borrow(&bunker.rooms, i);
             
             if (room.room_type == ROOM_TYPE_GENERATOR && room.assigned_npcs > 0) {
+                let worker_bonus_pct = avg_pct(room.work_bonus_sum_pct, room.assigned_npcs);
                 let generator_level_bonus_pct = if (room.level > 1) {
                     (room.level - 1) * GENERATOR_POWER_BONUS_PCT_PER_LEVEL
                 } else {
@@ -626,7 +733,9 @@ module contracts::bunker {
 
                 let bonus_pct = 100 + bunker_level_bonus_pct + generator_level_bonus_pct;
 
-                total_generation = total_generation + ((POWER_GENERATOR_PRODUCE * room.assigned_npcs * bonus_pct) / 100);
+                let combined_pct = (bonus_pct * (100 + worker_bonus_pct)) / 100;
+
+                total_generation = total_generation + ((POWER_GENERATOR_PRODUCE * room.assigned_npcs * combined_pct) / 100);
                 total_consumption = total_consumption + (POWER_GENERATOR_CONSUME * room.assigned_npcs);
             } else if (room.room_type == ROOM_TYPE_FARM && room.assigned_npcs > 0) {
                 total_consumption = total_consumption + (POWER_FARM * room.assigned_npcs);
@@ -657,7 +766,13 @@ module contracts::bunker {
     // ==================== ROOM WORKER MANAGEMENT ====================
     
     /// Assign NPC to room (called from npc module)
-    public fun increment_room_workers(bunker: &mut Bunker, room_index: u64, clock: &Clock) {
+    public fun increment_room_workers(
+        bunker: &mut Bunker,
+        room_index: u64,
+        work_bonus_pct: u64,
+        is_engineer: bool,
+        clock: &Clock
+    ) {
         assert!(room_index < vector::length(&bunker.rooms), E_ROOM_NOT_FOUND);
         let room = vector::borrow_mut(&mut bunker.rooms, room_index);
         assert!(room.assigned_npcs < room.capacity, E_ROOM_FULL);
@@ -673,11 +788,22 @@ module contracts::bunker {
         };
         
         room.assigned_npcs = room.assigned_npcs + 1;
+        room.work_bonus_sum_pct = room.work_bonus_sum_pct + work_bonus_pct;
+        if (is_engineer) {
+            room.engineer_workers = room.engineer_workers + 1;
+            room.engineer_bonus_sum_pct = room.engineer_bonus_sum_pct + work_bonus_pct;
+        };
         recalculate_power(bunker);
     }
     
     /// Unassign NPC from room (called from npc module)
-    public fun decrement_room_workers(bunker: &mut Bunker, room_index: u64, clock: &Clock) {
+    public fun decrement_room_workers(
+        bunker: &mut Bunker,
+        room_index: u64,
+        work_bonus_pct: u64,
+        is_engineer: bool,
+        clock: &Clock
+    ) {
         assert!(room_index < vector::length(&bunker.rooms), E_ROOM_NOT_FOUND);
         let room = vector::borrow_mut(&mut bunker.rooms, room_index);
 
@@ -685,6 +811,16 @@ module contracts::bunker {
             let current_time = sui::clock::timestamp_ms(clock);
             update_room_accumulated(room, current_time);
             room.assigned_npcs = room.assigned_npcs - 1;
+
+            // Bookkeeping for bonus sums
+            assert!(room.work_bonus_sum_pct >= work_bonus_pct, 0);
+            room.work_bonus_sum_pct = room.work_bonus_sum_pct - work_bonus_pct;
+            if (is_engineer) {
+                assert!(room.engineer_workers > 0, 0);
+                assert!(room.engineer_bonus_sum_pct >= work_bonus_pct, 0);
+                room.engineer_workers = room.engineer_workers - 1;
+                room.engineer_bonus_sum_pct = room.engineer_bonus_sum_pct - work_bonus_pct;
+            };
             recalculate_power(bunker);
         };
     }
@@ -774,6 +910,9 @@ module contracts::bunker {
     public fun room_assigned_npcs(room: &Room): u64 { room.assigned_npcs }
     public fun room_production_rate(room: &Room): u64 { room.production_rate }
     public fun room_accumulated(room: &Room): u64 { room.accumulated }
+
+    public fun room_engineer_workers(room: &Room): u64 { room.engineer_workers }
+    public fun room_engineer_bonus_sum_pct(room: &Room): u64 { room.engineer_bonus_sum_pct }
     
     // Room type constants (for use in other modules)
     public fun room_type_living(): u8 { ROOM_TYPE_LIVING }
@@ -782,6 +921,25 @@ module contracts::bunker {
     public fun room_type_water_pump(): u8 { ROOM_TYPE_WATER_PUMP }
     public fun room_type_workshop(): u8 { ROOM_TYPE_WORKSHOP }
     public fun room_type_storage(): u8 { ROOM_TYPE_STORAGE }
+
+    public fun get_first_room_index_by_type(bunker: &Bunker, wanted_type: u8): Option<u64> {
+        let mut i = 0;
+        let len = vector::length(&bunker.rooms);
+        while (i < len) {
+            let room = vector::borrow(&bunker.rooms, i);
+            if (room.room_type == wanted_type) {
+                return option::some(i)
+            };
+            i = i + 1;
+        };
+        option::none()
+    }
+
+    public fun get_room_engineer_avg_bonus_pct(bunker: &Bunker, room_index: u64): u64 {
+        assert!(room_index < vector::length(&bunker.rooms), E_ROOM_NOT_FOUND);
+        let room = vector::borrow(&bunker.rooms, room_index);
+        avg_pct(room.engineer_bonus_sum_pct, room.engineer_workers)
+    }
 
     // ==================== TEST HELPERS ====================
 
@@ -800,6 +958,9 @@ module contracts::bunker {
             last_collected_at: 0,
             accumulated: 0,
             production_remainder: 0,
+            work_bonus_sum_pct: 0,
+            engineer_workers: 0,
+            engineer_bonus_sum_pct: 0,
         });
 
         vector::push_back(&mut rooms, Room {
@@ -812,6 +973,9 @@ module contracts::bunker {
             last_collected_at: 0,
             accumulated: 0,
             production_remainder: 0,
+            work_bonus_sum_pct: 0,
+            engineer_workers: 0,
+            engineer_bonus_sum_pct: 0,
         });
 
         vector::push_back(&mut rooms, Room {
@@ -824,6 +988,9 @@ module contracts::bunker {
             last_collected_at: 0,
             accumulated: 0,
             production_remainder: 0,
+            work_bonus_sum_pct: 0,
+            engineer_workers: 0,
+            engineer_bonus_sum_pct: 0,
         });
 
         vector::push_back(&mut rooms, Room {
@@ -836,6 +1003,9 @@ module contracts::bunker {
             last_collected_at: 0,
             accumulated: 0,
             production_remainder: 0,
+            work_bonus_sum_pct: 0,
+            engineer_workers: 0,
+            engineer_bonus_sum_pct: 0,
         });
 
         let mut bunker = Bunker {

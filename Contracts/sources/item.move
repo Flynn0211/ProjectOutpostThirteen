@@ -4,6 +4,7 @@ module contracts::item {
     use sui::transfer;
     use sui::event;
     use std::string::{Self, String};
+    use std::option::{Self as option, Option};
     use contracts::utils;
     use sui::clock::Clock;
 
@@ -17,6 +18,8 @@ module contracts::item {
     const TYPE_REVIVAL_POTION: u8 = 5;
     const TYPE_FOOD: u8 = 6;
     const TYPE_WATER: u8 = 7;
+    const TYPE_CLOTH: u8 = 8;
+    const TYPE_BANDAGE: u8 = 9;
     const TYPE_COLLECTIBLE: u8 = 99;
     
     // Rarity levels
@@ -41,13 +44,61 @@ module contracts::item {
     const DECAY_CRITICAL_FAILURE: u64 = 10;    // Thua thảm: -10
     
     // Chi phí sửa chữa
-    const REPAIR_COST_SCRAP_PER_DURABILITY: u64 = 2;    // 2 Scrap/1 độ bền
-    const REPAIR_COST_SUI: u64 = 10_000_000;            // 0.01 SUI (phí cố định)
+    // NOTE: V2 repair cost is computed dynamically by rarity/level.
     
     // Mã lỗi
     const E_ITEM_NOT_DAMAGED: u64 = 1000;      // Vật phẩm chưa hỏng
     const E_NOT_OWNER: u64 = 1002;             // Không phải chủ sở hữu
     const E_INSUFFICIENT_PAYMENT: u64 = 1003;  // Không đủ thanh toán
+    const E_WORKSHOP_REQUIRED: u64 = 1004;
+    const E_WORKSHOP_NO_POWER: u64 = 1005;
+
+    fun rarity_repair_coef(rarity: u8): u64 {
+        if (rarity == RARITY_COMMON) {
+            1
+        } else if (rarity == RARITY_RARE) {
+            2
+        } else if (rarity == RARITY_EPIC) {
+            5
+        } else if (rarity == RARITY_LEGENDARY) {
+            15
+        } else {
+            1
+        }
+    }
+
+    // Item level is not currently stored on-chain; default to 1 to keep struct layout stable.
+    fun item_level(_item: &Item): u64 { 1 }
+
+    public fun get_rating(item: &Item): u64 {
+        let level = item_level(item);
+        (level * 10) + ((item.rarity as u64) * 50)
+    }
+
+    fun ceil_div(n: u64, d: u64): u64 {
+        (n + (d - 1)) / d
+    }
+
+    public fun compute_repair_scrap_cost(item: &Item, engineer_discount_pct: u64): u64 {
+        let durability_lost = item.max_durability - item.durability;
+        let coef = rarity_repair_coef(item.rarity);
+        let mut cost = durability_lost * coef;
+
+        // levelCoef = 1 + level/10 => (10 + level) / 10
+        let level = item_level(item);
+        cost = ceil_div(cost * (10 + level), 10);
+
+        // Broken penalty: +20%
+        if (item.durability == 0) {
+            cost = ceil_div(cost * 120, 100);
+        };
+
+        if (engineer_discount_pct > 0 && engineer_discount_pct < 100) {
+            cost = (cost * (100 - engineer_discount_pct)) / 100;
+        };
+
+        cost
+    }
     
     // ============ Structs ============
     
@@ -261,6 +312,42 @@ module contracts::item {
         
         object::delete(id);
     }
+
+    public fun create_cloth(ctx: &mut TxContext): Item {
+        let rarity = RARITY_COMMON;
+        let item_type = TYPE_CLOTH;
+        let max_dur = get_max_durability_for_rarity(rarity);
+        Item {
+            id: object::new(ctx),
+            name: generate_item_name(item_type, rarity),
+            rarity,
+            item_type,
+            durability: max_dur,
+            max_durability: max_dur,
+            hp_bonus: 0,
+            attack_bonus: 0,
+            defense_bonus: 0,
+            luck_bonus: 0,
+        }
+    }
+
+    public fun create_bandage(ctx: &mut TxContext): Item {
+        let rarity = RARITY_COMMON;
+        let item_type = TYPE_BANDAGE;
+        let max_dur = get_max_durability_for_rarity(rarity);
+        Item {
+            id: object::new(ctx),
+            name: generate_item_name(item_type, rarity),
+            rarity,
+            item_type,
+            durability: max_dur,
+            max_durability: max_dur,
+            hp_bonus: 0,
+            attack_bonus: 0,
+            defense_bonus: 0,
+            luck_bonus: 0,
+        }
+    }
     
     // ============ PHASE 3: Durability Functions ============
     
@@ -307,57 +394,7 @@ module contracts::item {
         if (is_broken(item)) { 0 } else { item.luck_bonus }
     }
     
-    /// Repair item to full durability
-    public entry fun repair_item(
-        item: &mut Item,
-        bunker: &mut contracts::bunker::Bunker,
-        mut payment: sui::coin::Coin<sui::sui::SUI>,
-        clock: &Clock,
-        ctx: &mut TxContext
-    ) {
-        use sui::coin;
-        use contracts::bunker;
-        
-        let sender = tx_context::sender(ctx);
-        assert!(bunker::get_owner(bunker) == sender, E_NOT_OWNER);
-        
-        // Calculate damage
-        let durability_lost = item.max_durability - item.durability;
-        assert!(durability_lost > 0, E_ITEM_NOT_DAMAGED);
-        
-        // Calculate costs
-        let scrap_cost = durability_lost * REPAIR_COST_SCRAP_PER_DURABILITY;
-        let sui_cost = REPAIR_COST_SUI;
-        
-        // Verify resources
-        assert!(coin::value(&payment) >= sui_cost, E_INSUFFICIENT_PAYMENT);
-        
-        // Consume scrap from bunker
-        bunker::consume_scrap(bunker, scrap_cost);
-        
-        // Burn SUI (deflationary)
-        let sui_coin = coin::split(&mut payment, sui_cost, ctx);
-        transfer::public_transfer(sui_coin, @0x0);
-        
-        // Return excess
-        if (coin::value(&payment) > 0) {
-            transfer::public_transfer(payment, sender);
-        } else {
-            coin::destroy_zero(payment);
-        };
-        
-        // Restore durability
-        item.durability = item.max_durability;
-        
-        // Emit event
-        utils::emit_item_repaired_event(
-            object::id(item),
-            sender,
-            durability_lost,
-            scrap_cost,
-            clock
-        );
-    }
+
     
     // ============ Getters ============
     
@@ -396,6 +433,7 @@ module contracts::item {
     // Phase 3: Durability getters
     public fun get_durability(item: &Item): u64 { item.durability }
     public fun get_max_durability(item: &Item): u64 { item.max_durability }
+    public fun set_durability_to_max(item: &mut Item) { item.durability = item.max_durability; }
     public fun get_durability_percent(item: &Item): u64 {
         if (item.max_durability == 0) { 0 }
         else { (item.durability * 100) / item.max_durability }
@@ -418,6 +456,14 @@ module contracts::item {
 
     public fun type_water(): u8 {
         TYPE_WATER
+    }
+
+    public fun type_cloth(): u8 {
+        TYPE_CLOTH
+    }
+
+    public fun type_bandage(): u8 {
+        TYPE_BANDAGE
     }
 
     public fun type_collectible(): u8 {
@@ -452,7 +498,7 @@ module contracts::item {
             (base, 0, 0, 0) // Food gives small HP bonus if equipped (or useless)
         } else if (item_type == TYPE_WATER) {
             (0, 0, 0, 0)
-        } else { // TYPE_REVIVAL_POTION, TYPE_COLLECTIBLE
+        } else { // TYPE_REVIVAL_POTION, TYPE_CLOTH, TYPE_BANDAGE, TYPE_COLLECTIBLE
             (0, 0, 0, 0) // No passive stats
         };
         
@@ -479,6 +525,8 @@ module contracts::item {
                        else if (item_type == TYPE_REVIVAL_POTION) { string::utf8(b" Revival Potion") }
                        else if (item_type == TYPE_FOOD) { string::utf8(b" Food") }
                        else if (item_type == TYPE_WATER) { string::utf8(b" Water") }
+                       else if (item_type == TYPE_CLOTH) { string::utf8(b" Cloth") }
+                       else if (item_type == TYPE_BANDAGE) { string::utf8(b" Bandage") }
                        else { string::utf8(b" Artifact") }; // Collectible
         
         string::append(&mut rarity_name, type_name);
